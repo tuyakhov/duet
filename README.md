@@ -4,6 +4,8 @@
 
 **Live:** https://duet-pearl.vercel.app · **Source:** https://github.com/tuyakhov/duet
 
+![Duet — a human and their browser agent sharing one music studio](docs/duet-thumbnail.png)
+
 Duet is a browser-based music studio shared by a human and their external WebMCP-capable agent. The human records or draws a 16-step melody that exists only in the current browser session. The agent reads that exact unsaved composition through tools exposed by the page, adds instruments, writes an accompaniment, and performs the result. The human can change notes, mute tracks, adjust the energy — and the agent immediately sees the changed live state and adapts.
 
 > Duet turns a webpage into a shared musical instrument. A human contributes through direct manipulation while their chosen browser agent contributes through structured capabilities supplied dynamically by the same page. Neither needs to own the entire creative process.
