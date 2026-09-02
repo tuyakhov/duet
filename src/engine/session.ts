@@ -1,5 +1,19 @@
-import type { Composition, Note, SessionState } from './types'
+import type { Composition, MusicalContract, Note, SessionState } from './types'
 import { LOOP_LENGTH } from './types'
+
+export function defaultContract(): MusicalContract {
+  return {
+    melodyLocked: true,
+    agentMayEdit: { keys: true, drums: true, bass: true, pad: true, mix: true },
+    preserve: { pitch: true, timing: true, velocity: true },
+    feel: 'straight',
+    density: 'balanced',
+    harmony: 'colourful',
+    maxIntensity: 0.9,
+    lockTempo: false,
+    lockKey: false,
+  }
+}
 
 export function newSessionId(): string {
   return `duet-${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`
@@ -24,11 +38,13 @@ export function createComposition(): Composition {
     instruments: ['lead'],
     swing: 0,
     space: 0.25,
-    lead: { notes: [], preset: 'neon', mixer: { volume: 0.8, muted: false } },
-    keys: { notes: [], preset: 'tines', mixer: { volume: 0.75, muted: false } },
-    bass: { notes: [], preset: 'warm', mixer: { volume: 0.85, muted: false } },
-    drums: { pattern: emptyDrumPattern(), preset: 'analog', mixer: { volume: 0.9, muted: false } },
-    pad: { chords: [], preset: 'haze', mixer: { volume: 0.6, muted: false } },
+    humanize: 0.25,
+    contract: defaultContract(),
+    lead: { notes: [], preset: 'neon', mixer: { volume: 0.75, muted: false } },
+    keys: { notes: [], preset: 'tines', mixer: { volume: 0.7, muted: false } },
+    bass: { notes: [], preset: 'warm', mixer: { volume: 0.8, muted: false } },
+    drums: { pattern: emptyDrumPattern(), preset: 'analog', mixer: { volume: 0.85, muted: false } },
+    pad: { chords: [], preset: 'haze', mixer: { volume: 0.5, muted: false } },
   }
 }
 
@@ -39,7 +55,7 @@ export function createSession(): SessionState {
     mode: 'compose',
     composition: createComposition(),
     energy: 0.6,
-    playback: { playing: false, step: -1 },
+    playback: { playing: false, step: -1, bar: -1 },
     activity: [],
     selection: { instrument: null, steps: [] },
     audioEnabled: false,

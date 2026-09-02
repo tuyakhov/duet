@@ -2,8 +2,11 @@ import { DuetError } from './errors'
 import { isValidPitch } from './music'
 import {
   BASS_PRESETS,
+  DENSITIES,
   DRUM_PRESETS,
   DRUM_VOICES,
+  GROOVE_FEELS,
+  HARMONIC_FREEDOMS,
   KEYS,
   KEYS_PRESETS,
   LEAD_PRESETS,
@@ -14,7 +17,19 @@ import {
   PAD_PRESETS,
   SCALE_NAMES,
 } from './types'
-import type { Chord, DrumPattern, DrumVoice, InstrumentId, Note, ScaleName } from './types'
+import type {
+  Chord,
+  Density,
+  DrumPattern,
+  DrumVoice,
+  GrooveFeel,
+  HarmonicFreedom,
+  InstrumentId,
+  MusicalContract,
+  Note,
+  PatternSection,
+  ScaleName,
+} from './types'
 
 const INSTRUMENTS: InstrumentId[] = ['lead', 'keys', 'drums', 'bass', 'pad']
 
@@ -152,7 +167,16 @@ export function validateNote(raw: unknown, label = 'note'): Note {
   if (typeof velocity !== 'number' || velocity < 0 || velocity > 1) {
     throw new DuetError('INVALID_VELOCITY', `Invalid velocity ${String(n.velocity)} — must be between 0 and 1.`)
   }
-  return { step, pitch: n.pitch, duration, velocity }
+  const offset = n.offset === undefined ? 0 : n.offset
+  if (typeof offset !== 'number' || !Number.isFinite(offset) || offset < -0.45 || offset > 0.45) {
+    throw new DuetError(
+      'INVALID_INPUT',
+      `Invalid timing offset ${String(n.offset)} — must be between -0.45 and 0.45 steps (±0.05 is subtle).`,
+    )
+  }
+  const note: Note = { step, pitch: n.pitch, duration, velocity }
+  if (offset !== 0) note.offset = offset
+  return note
 }
 
 export function validateNotes(raw: unknown): Note[] {
@@ -226,4 +250,77 @@ export function assertSteps(raw: unknown): number[] {
     throw new DuetError('INVALID_INPUT', 'Expected a non-empty array of steps.')
   }
   return raw.map((s) => assertStep(s))
+}
+
+export function assertHumanize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new DuetError('INVALID_INPUT', `Humanize must be a number from 0 to 1 (got ${String(value)}).`)
+  }
+  return value
+}
+
+export function assertSection(value: unknown): PatternSection {
+  if (value === undefined) return 'main'
+  if (value !== 'main' && value !== 'variation' && value !== 'fill') {
+    throw new DuetError('UNSUPPORTED_VALUE', `Unknown section "${String(value)}" — use main, variation or fill.`)
+  }
+  return value
+}
+
+/** Validate a partial contract patch against the current contract. */
+export function validateContractPatch(current: MusicalContract, raw: unknown): MusicalContract {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new DuetError('INVALID_INPUT', 'Contract changes must be an object.')
+  }
+  const p = raw as Partial<MusicalContract>
+  const next: MusicalContract = JSON.parse(JSON.stringify(current)) as MusicalContract
+  const bool = (v: unknown, label: string): boolean => {
+    if (typeof v !== 'boolean') throw new DuetError('INVALID_INPUT', `${label} must be a boolean.`)
+    return v
+  }
+  if (p.melodyLocked !== undefined) next.melodyLocked = bool(p.melodyLocked, 'melodyLocked')
+  if (p.lockTempo !== undefined) next.lockTempo = bool(p.lockTempo, 'lockTempo')
+  if (p.lockKey !== undefined) next.lockKey = bool(p.lockKey, 'lockKey')
+  if (p.agentMayEdit !== undefined) {
+    for (const k of ['keys', 'drums', 'bass', 'pad', 'mix'] as const) {
+      const v = (p.agentMayEdit as Record<string, unknown>)[k]
+      if (v !== undefined) next.agentMayEdit[k] = bool(v, `agentMayEdit.${k}`)
+    }
+  }
+  if (p.preserve !== undefined) {
+    for (const k of ['pitch', 'timing', 'velocity'] as const) {
+      const v = (p.preserve as Record<string, unknown>)[k]
+      if (v !== undefined) next.preserve[k] = bool(v, `preserve.${k}`)
+    }
+  }
+  if (p.feel !== undefined) {
+    if (!GROOVE_FEELS.includes(p.feel as GrooveFeel)) {
+      throw new DuetError('UNSUPPORTED_VALUE', `Unknown feel — use ${GROOVE_FEELS.join(', ')}.`)
+    }
+    next.feel = p.feel as GrooveFeel
+  }
+  if (p.density !== undefined) {
+    if (!DENSITIES.includes(p.density as Density)) {
+      throw new DuetError('UNSUPPORTED_VALUE', `Unknown density — use ${DENSITIES.join(', ')}.`)
+    }
+    next.density = p.density as Density
+  }
+  if (p.harmony !== undefined) {
+    if (!HARMONIC_FREEDOMS.includes(p.harmony as HarmonicFreedom)) {
+      throw new DuetError('UNSUPPORTED_VALUE', `Unknown harmony — use ${HARMONIC_FREEDOMS.join(', ')}.`)
+    }
+    next.harmony = p.harmony as HarmonicFreedom
+  }
+  if (p.maxIntensity !== undefined) {
+    if (
+      typeof p.maxIntensity !== 'number' ||
+      !Number.isFinite(p.maxIntensity) ||
+      p.maxIntensity < 0 ||
+      p.maxIntensity > 1
+    ) {
+      throw new DuetError('INVALID_INPUT', 'maxIntensity must be a number from 0 to 1.')
+    }
+    next.maxIntensity = p.maxIntensity
+  }
+  return next
 }

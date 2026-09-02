@@ -1,8 +1,12 @@
+import { viewDrumSection } from '../engine/ops'
+import { emptyDrumPattern } from '../engine/session'
 import { DRUM_VOICES, LOOP_LENGTH } from '../engine/types'
 import type { DrumVoice } from '../engine/types'
 import { humanActions } from '../state/actions'
 import { useStudioStore } from '../state/store'
 import { STEP_GAP, STEP_W, stepLeft } from './trackMeta'
+
+const EMPTY = emptyDrumPattern()
 
 const VOICE_LABELS: Record<DrumVoice, string> = {
   kick: 'Kick',
@@ -13,8 +17,8 @@ const VOICE_LABELS: Record<DrumVoice, string> = {
 
 const DRUM_LABEL_W = 64
 
-export function DrumGrid() {
-  const pattern = useStudioStore((s) => s.composition.drums.pattern)
+export function DrumGrid({ section = 'main' }: { section?: 'main' | 'variation' | 'fill' }) {
+  const pattern = useStudioStore((s) => viewDrumSection(s.composition, section) ?? EMPTY)
   const playStep = useStudioStore((s) => s.playback.step)
   const playing = useStudioStore((s) => s.playback.playing)
   const mode = useStudioStore((s) => s.mode)
@@ -34,7 +38,7 @@ export function DrumGrid() {
               <button
                 key={`${voice}-${step}`}
                 className={`drum-cell ${step % 4 === 0 ? 'beat-start' : ''} ${on ? 'on' : ''} ${hit ? 'hit' : ''}`}
-                onClick={() => editable && humanActions.toggleDrum(voice, step)}
+                onClick={() => editable && humanActions.toggleDrum(voice, step, section)}
                 aria-label={`${VOICE_LABELS[voice]} step ${step} ${on ? 'on' : 'off'}`}
                 aria-pressed={on}
               />

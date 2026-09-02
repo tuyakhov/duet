@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ActivityTimeline } from './components/ActivityTimeline'
+import { ApprovalModal } from './components/ApprovalModal'
 import { CapabilityPanel } from './components/CapabilityPanel'
 import { Celebration } from './components/Celebration'
+import { ContractPanel } from './components/ContractPanel'
 import { InstrumentRack } from './components/InstrumentRack'
 import { PerformanceView } from './components/PerformanceView'
 import { PromptCard } from './components/PromptCard'
@@ -160,6 +162,7 @@ export default function App() {
           )}
         </main>
         <aside className="studio-side">
+          <ContractPanel />
           <CapabilityPanel />
           {mode === 'compose' && <PromptCard />}
           <ActivityTimeline />
@@ -167,6 +170,7 @@ export default function App() {
       </div>
 
       {!audioEnabled && !welcomeDone && <WelcomeOverlay onDone={() => setWelcomeDone(true)} />}
+      <ApprovalModal />
       <PublishModal />
       <Celebration />
 

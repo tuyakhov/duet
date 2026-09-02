@@ -35,6 +35,14 @@ export function humanApply(fn: (c: Composition) => OpResult): boolean {
 }
 
 type MelodicId = 'lead' | 'keys' | 'bass'
+type Section = 'main' | 'variation' | 'fill'
+
+/** Swing/humanize presets behind the contract's feel selector. */
+const FEEL_GROOVE: Record<string, { swing: number; humanize?: number }> = {
+  straight: { swing: 0 },
+  swung: { swing: 0.22 },
+  laidback: { swing: 0.08, humanize: 0.4 },
+}
 
 export const humanActions = {
   setTitle: (title: string) => humanApply((c) => ops.setTitle(c, title)),
@@ -44,24 +52,45 @@ export const humanActions = {
   setScale: (scale: string) => humanApply((c) => ops.setKeyScale(c, undefined, scale)),
   setSwing: (swing: number) => humanApply((c) => ops.setGroove(c, { swing })),
   setSpace: (space: number) => humanApply((c) => ops.setGroove(c, { space })),
+  setHumanize: (humanize: number) => humanApply((c) => ops.setGroove(c, { humanize })),
+  setContract: (patch: Record<string, unknown>) => humanApply((c) => ops.setContract(c, patch)),
+  setFeel: (feel: 'straight' | 'swung' | 'laidback') => {
+    const ok = humanApply((c) => ops.setContract(c, { feel }))
+    if (!ok) return false
+    const groove = FEEL_GROOVE[feel]
+    return humanApply((c) =>
+      ops.setGroove(c, {
+        swing: groove.swing,
+        humanize: groove.humanize !== undefined ? Math.max(c.humanize, groove.humanize) : undefined,
+      }),
+    )
+  },
   addInstrument: (id: InstrumentId) => humanApply((c) => ops.addInstrument(c, id)),
   removeInstrument: (id: InstrumentId) => humanApply((c) => ops.removeInstrument(c, id)),
   setVolume: (id: InstrumentId, volume: number) => humanApply((c) => ops.setMixer(c, id, { volume })),
   toggleMute: (id: InstrumentId) =>
     humanApply((c) => ops.setMixer(c, id, { muted: !c[id].mixer.muted })),
   setPreset: (id: InstrumentId, preset: string) => humanApply((c) => ops.setPreset(c, id, preset)),
-  toggleNote: (id: MelodicId, step: number, pitch: string) =>
-    humanApply((c) => ops.toggleNoteCell(c, id, step, pitch)),
-  drawNote: (id: MelodicId, step: number, pitch: string, duration: number) =>
+  toggleNote: (id: MelodicId, step: number, pitch: string, section: Section = 'main') =>
+    humanApply((c) => ops.toggleNoteCell(c, id, step, pitch, 1, section)),
+  drawNote: (id: MelodicId, step: number, pitch: string, duration: number, section: Section = 'main') =>
     humanApply((c) => {
-      const withoutOld = c[id].notes.some((n) => n.step === step && n.pitch === pitch)
-        ? ops.toggleNoteCell(c, id, step, pitch).composition
+      const slot = ops.viewMelodicSection(c, id, section) ?? []
+      const withoutOld = slot.some((n) => n.step === step && n.pitch === pitch)
+        ? ops.toggleNoteCell(c, id, step, pitch, 1, section).composition
         : c
-      return ops.addNotes(withoutOld, id, [{ step, pitch, duration, velocity: 0.85 }])
+      return ops.addNotes(withoutOld, id, [{ step, pitch, duration, velocity: 0.85 }], section)
     }),
-  removeNote: (id: MelodicId, step: number, pitch: string) =>
-    humanApply((c) => ops.toggleNoteCell(c, id, step, pitch)),
-  toggleDrum: (voice: DrumVoice, step: number) => humanApply((c) => ops.toggleDrumStep(c, voice, step)),
+  removeNote: (id: MelodicId, step: number, pitch: string, section: Section = 'main') =>
+    humanApply((c) => ops.toggleNoteCell(c, id, step, pitch, 1, section)),
+  toggleDrum: (voice: DrumVoice, step: number, section: Section = 'main') =>
+    humanApply((c) => ops.toggleDrumStep(c, voice, step, section)),
+  copySectionFromMain: (id: 'drums' | 'bass', section: Section) =>
+    humanApply((c) =>
+      id === 'drums' ? ops.copyDrumSectionFromMain(c, section) : ops.copyMelodicSectionFromMain(c, id, section),
+    ),
+  clearSection: (id: 'drums' | 'bass', section: Section) =>
+    humanApply((c) => (id === 'drums' ? ops.clearDrumSection(c, section) : ops.clearMelodicSection(c, id, section))),
   addChord: (step: number, duration: number, pitches: string[]) =>
     humanApply((c) => ops.addChord(c, { step, duration, pitches, velocity: 0.6 })),
   removeChord: (step: number) => humanApply((c) => ops.removeChordAtStep(c, step)),

@@ -17,9 +17,12 @@ export function StopIcon() {
   )
 }
 
+const BAR_LABELS = ['main', 'main', 'variation', 'fill']
+
 export function Transport() {
   const playing = useStudioStore((s) => s.playback.playing)
   const step = useStudioStore((s) => s.playback.step)
+  const bar = useStudioStore((s) => s.playback.bar)
   const audioEnabled = useStudioStore((s) => s.audioEnabled)
 
   return (
@@ -40,6 +43,11 @@ export function Transport() {
           />
         ))}
       </div>
+      {playing && bar >= 0 && (
+        <span className="bar-indicator" title="4-bar phrase: main, main, variation, fill">
+          Bar {bar + 1}/4 · {BAR_LABELS[bar]}
+        </span>
+      )}
     </div>
   )
 }

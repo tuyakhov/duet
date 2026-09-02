@@ -39,10 +39,24 @@ describe('share codec', () => {
     const decoded = decodeShare(encodeShare(richComposition()))
     expect(Object.keys(decoded).sort()).toEqual(
       [
-        'bass', 'drums', 'instruments', 'key', 'keys', 'lead', 'loopLength',
-        'pad', 'scale', 'space', 'swing', 'tempo', 'title',
+        'bass', 'contract', 'drums', 'humanize', 'instruments', 'key', 'keys', 'lead',
+        'loopLength', 'pad', 'scale', 'space', 'swing', 'tempo', 'title',
       ].sort(),
     )
+  })
+
+  it('round-trips contract, humanize and phrase sections', () => {
+    let c = richComposition()
+    c = ops.setContract(c, { melodyLocked: false, maxIntensity: 0.7, feel: 'swung' }).composition
+    c = ops.setGroove(c, { humanize: 0.4 }).composition
+    c = ops.setDrumSteps(c, 'snare', [12, 13, 14, 15], true, 'fill').composition
+    c = ops.addNotes(c, 'bass', [{ step: 0, pitch: 'C2', duration: 4, velocity: 0.9 }], 'variation').composition
+    const decoded = decodeShare(encodeShare(c))
+    expect(decoded.contract.melodyLocked).toBe(false)
+    expect(decoded.contract.maxIntensity).toBe(0.7)
+    expect(decoded.humanize).toBe(0.4)
+    expect(decoded.drums.patternFill?.snare.filter(Boolean)).toHaveLength(4)
+    expect(decoded.bass.notesVariation).toHaveLength(1)
   })
 
   it('gives old-format links sensible defaults for new fields', () => {

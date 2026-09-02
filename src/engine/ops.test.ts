@@ -219,6 +219,38 @@ describe('session-level edits', () => {
     expect(() => ops.setGroove(c, {})).toThrow(DuetError)
   })
 
+  it('validates note timing offsets', () => {
+    expect(validateNote({ step: 0, pitch: 'C4', offset: 0.1 }).offset).toBe(0.1)
+    expect(validateNote({ step: 0, pitch: 'C4' }).offset).toBeUndefined()
+    expect(() => validateNote({ step: 0, pitch: 'C4', offset: 0.6 })).toThrow(DuetError)
+    expect(() => validateNote({ step: 0, pitch: 'C4', offset: -0.6 })).toThrow(DuetError)
+  })
+
+  it('phrase helpers pick the right pattern per bar', () => {
+    let c = ops.addInstrument(createComposition(), 'drums').composition
+    c = ops.addInstrument(c, 'bass').composition
+    expect(ops.hasPhrase(c)).toBe(false)
+    c = ops.setDrumSteps(c, 'snare', [14, 15], true, 'fill').composition
+    c = ops.replaceNotes(c, 'bass', [{ step: 0, pitch: 'C2' }], 'variation').composition
+    expect(ops.hasPhrase(c)).toBe(true)
+    expect(ops.drumPatternForBar(c, 0)).toBe(c.drums.pattern)
+    expect(ops.drumPatternForBar(c, 2)).toBe(c.drums.pattern) // no drum variation → main
+    expect(ops.drumPatternForBar(c, 3)).toBe(c.drums.patternFill)
+    expect(ops.bassNotesForBar(c, 2)).toBe(c.bass.notesVariation)
+    expect(ops.bassNotesForBar(c, 3)).toBe(c.bass.notesVariation) // no fill → falls back to variation
+  })
+
+  it('contract validation accepts partial patches and rejects junk', () => {
+    const c = createComposition()
+    const { composition } = ops.setContract(c, { melodyLocked: false, density: 'sparse' })
+    expect(composition.contract.melodyLocked).toBe(false)
+    expect(composition.contract.density).toBe('sparse')
+    expect(composition.contract.harmony).toBe('colourful') // untouched
+    expect(() => ops.setContract(c, { density: 'extreme' })).toThrow(DuetError)
+    expect(() => ops.setContract(c, { maxIntensity: 3 })).toThrow(DuetError)
+    expect(() => ops.setContract(c, {})).toThrow(DuetError)
+  })
+
   it('keys is a melodic instrument like lead and bass', () => {
     let c = ops.addInstrument(createComposition(), 'keys').composition
     c = ops.addNotes(c, 'keys', [{ step: 0, pitch: 'C3', duration: 2, velocity: 0.7 }]).composition

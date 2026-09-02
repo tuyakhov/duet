@@ -849,17 +849,16 @@ select {
   white-space: nowrap;
 }
 
-.chord-palette {
-  position: absolute;
-  z-index: 30;
-  background: rgba(28, 28, 30, 0.92);
-  backdrop-filter: blur(24px);
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-m);
-  padding: 7px;
+.chord-chooser {
   display: flex;
-  gap: 5px;
-  box-shadow: var(--shadow-float);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--pad) 35%, transparent);
+  border-radius: var(--radius-m);
   animation: fade-up 0.16s ease-out;
 }
 
@@ -874,19 +873,39 @@ select {
   }
 }
 
-.chord-palette button {
+.chord-chooser-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.chord-chooser-btn {
   font-size: 12.5px;
   font-weight: 500;
-  padding: 8px 11px;
+  padding: 7px 12px;
   border-radius: 8px;
-  background: transparent;
-  color: var(--text-dim);
+  background: var(--surface-raised);
+  color: var(--text);
   transition: all 0.12s;
 }
 
-.chord-palette button:hover {
+.chord-chooser-btn:hover {
   background: var(--pad);
   color: #fff;
+}
+
+.chord-chooser-cancel {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.chord-chooser-cancel:hover {
+  color: var(--text);
+  background: var(--surface-raised);
 }
 
 /* ── instrument rack ──────────────────────────────────────────────────── */
@@ -922,6 +941,178 @@ select {
 .rack-add span[aria-hidden] {
   color: var(--track-color);
   font-weight: 600;
+}
+
+/* ── section tabs & bar indicator ─────────────────────────────────────── */
+
+.section-tabs {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  margin-left: 10px;
+}
+
+.section-tabs button {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+.section-tabs button.active {
+  background: var(--surface-pressed);
+  color: var(--text);
+}
+
+.section-tabs button.playing::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 25%;
+  right: 25%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.slot-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--track-color, var(--accent));
+}
+
+.section-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 2px 0 8px;
+}
+
+.section-hint .link-btn {
+  font-size: 11.5px;
+}
+
+.bar-indicator {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 5px 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── musical contract ─────────────────────────────────────────────────── */
+
+.contract-panel {
+  border-color: rgba(10, 132, 255, 0.25);
+}
+
+.contract-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.contract-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.contract-label em {
+  font-style: normal;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.contract-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.contract-chip {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--text-faint);
+  transition: all 0.14s;
+}
+
+.contract-chip:hover {
+  color: var(--text-dim);
+}
+
+.contract-chip.on {
+  background: rgba(10, 132, 255, 0.16);
+  border-color: rgba(10, 132, 255, 0.45);
+  color: var(--text);
+}
+
+.contract-seg {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.contract-seg button {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  transition: all 0.15s;
+}
+
+.contract-seg button.active {
+  background: var(--surface-pressed);
+  color: var(--text);
+}
+
+.contract-note {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.approval-diff {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-m);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 18px;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 /* ── side panels ──────────────────────────────────────────────────────── */

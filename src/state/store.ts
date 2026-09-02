@@ -34,6 +34,13 @@ export interface PendingPublish {
   requestedBy: Actor
 }
 
+/** A contract-gated agent edit paused for the human's decision. */
+export interface PendingEditApproval {
+  title: string
+  /** Human-readable description of exactly what the agent wants to change. */
+  description: string
+}
+
 export interface PublishOutcome {
   approved: boolean
   title?: string
@@ -49,6 +56,7 @@ export interface StudioState extends SessionState {
   highlights: Partial<Record<InstrumentId | 'session', Highlight>>
   undoDepth: number
   pendingPublish: PendingPublish | null
+  pendingEdit: PendingEditApproval | null
   celebration: PublishCelebration | null
 
   /** Run a composition mutation as `actor`. Throws DuetError on invalid input. */
@@ -59,7 +67,10 @@ export interface StudioState extends SessionState {
   launchBreakdown: (actor: Actor) => void
   breakdownUntil: number
   setPlayback: (playing: boolean, actor: Actor) => void
-  setPlayheadStep: (step: number) => void
+  setPlayheadStep: (step: number, bar?: number) => void
+  /** Pause a contract-gated agent edit until the human approves or declines. */
+  requestEditApproval: (request: PendingEditApproval) => Promise<boolean>
+  resolveEditApproval: (approved: boolean) => void
   setAudioEnabled: (enabled: boolean) => void
   setSelection: (instrument: InstrumentId | null, steps: number[]) => void
   logActivity: (actor: Actor, message: string) => void
@@ -73,6 +84,7 @@ export interface StudioState extends SessionState {
 let activityId = 1
 let highlightSeq = 1
 let publishResolver: ((outcome: PublishOutcome) => void) | null = null
+let editApprovalResolver: ((approved: boolean) => void) | null = null
 const undoStack: Composition[] = []
 
 function entry(actor: Actor, message: string): ActivityEntry {
@@ -90,6 +102,7 @@ export const useStudioStore = create<StudioState>()(
     highlights: {},
     undoDepth: 0,
     pendingPublish: null,
+    pendingEdit: null,
     celebration: null,
     breakdownUntil: 0,
 
@@ -161,14 +174,47 @@ export const useStudioStore = create<StudioState>()(
       const state = get()
       if (state.playback.playing === playing) return
       set({
-        playback: { playing, step: playing ? state.playback.step : -1 },
+        playback: { playing, step: playing ? state.playback.step : -1, bar: playing ? state.playback.bar : -1 },
         activity: pushActivity(state.activity, entry(actor, playing ? 'started playback' : 'stopped playback')),
       })
     },
 
-    setPlayheadStep: (step) => {
+    setPlayheadStep: (step, bar = -1) => {
       // Ignore draw callbacks that land after playback stopped.
-      set((s) => (s.playback.playing || step === -1 ? { playback: { ...s.playback, step } } : s))
+      set((s) => (s.playback.playing || step === -1 ? { playback: { ...s.playback, step, bar } } : s))
+    },
+
+    requestEditApproval: (request) => {
+      if (get().pendingEdit) {
+        return Promise.reject(
+          new DuetError('PUBLISH_PENDING', 'Another agent edit is already awaiting the human.'),
+        )
+      }
+      set({
+        pendingEdit: request,
+        activity: pushActivity(
+          get().activity,
+          entry('agent', `asked permission: ${request.title.toLowerCase()}`),
+        ),
+      })
+      return new Promise<boolean>((resolve) => {
+        editApprovalResolver = resolve
+      })
+    },
+
+    resolveEditApproval: (approved) => {
+      const state = get()
+      if (!state.pendingEdit) return
+      const resolver = editApprovalResolver
+      editApprovalResolver = null
+      set({
+        pendingEdit: null,
+        activity: pushActivity(
+          state.activity,
+          entry('human', approved ? 'approved the agent’s melody change' : 'declined the agent’s melody change'),
+        ),
+      })
+      resolver?.(approved)
     },
 
     setAudioEnabled: (enabled) => {
@@ -246,6 +292,8 @@ export const useStudioStore = create<StudioState>()(
       undoStack.length = 0
       publishResolver?.({ approved: false })
       publishResolver = null
+      editApprovalResolver?.(false)
+      editApprovalResolver = null
       const fresh = createSession()
       set({
         ...fresh,
@@ -253,6 +301,7 @@ export const useStudioStore = create<StudioState>()(
         highlights: {},
         undoDepth: 0,
         pendingPublish: null,
+        pendingEdit: null,
         celebration: null,
         breakdownUntil: 0,
         activity: [entry('system', 'started a fresh session')],
@@ -333,12 +382,14 @@ export function clearStorage() {
 export function __resetStoreForTests() {
   undoStack.length = 0
   publishResolver = null
+  editApprovalResolver = null
   const fresh = createSession()
   useStudioStore.setState({
     ...fresh,
     highlights: {},
     undoDepth: 0,
     pendingPublish: null,
+    pendingEdit: null,
     celebration: null,
     breakdownUntil: 0,
   })

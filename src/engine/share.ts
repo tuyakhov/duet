@@ -4,7 +4,15 @@
  * Activity history, playback position and performance state are excluded.
  */
 import { DuetError } from './errors'
-import { assertKey, assertScale, assertTempo, validateChord, validateDrumPattern, validateNotes } from './validate'
+import {
+  assertKey,
+  assertScale,
+  assertTempo,
+  validateChord,
+  validateContractPatch,
+  validateDrumPattern,
+  validateNotes,
+} from './validate'
 import { createComposition } from './session'
 import { LOOP_LENGTH } from './types'
 import type { Composition, InstrumentId } from './types'
@@ -90,10 +98,22 @@ export function decodeShare(encoded: string): Composition {
     composition.instruments = raw.instruments as InstrumentId[]
     if (typeof raw.swing === 'number' && raw.swing >= 0 && raw.swing <= 0.6) composition.swing = raw.swing
     if (typeof raw.space === 'number' && raw.space >= 0 && raw.space <= 1) composition.space = raw.space
+    if (typeof raw.humanize === 'number' && raw.humanize >= 0 && raw.humanize <= 1) {
+      composition.humanize = raw.humanize
+    }
+    if (raw.contract !== undefined) {
+      composition.contract = validateContractPatch(composition.contract, raw.contract)
+    }
     composition.lead.notes = validateNotes(raw.lead?.notes ?? [])
     composition.keys.notes = validateNotes(raw.keys?.notes ?? [])
     composition.bass.notes = validateNotes(raw.bass?.notes ?? [])
+    if (raw.bass?.notesVariation) composition.bass.notesVariation = validateNotes(raw.bass.notesVariation)
+    if (raw.bass?.notesFill) composition.bass.notesFill = validateNotes(raw.bass.notesFill)
     composition.drums.pattern = validateDrumPattern(raw.drums?.pattern ?? {})
+    if (raw.drums?.patternVariation) {
+      composition.drums.patternVariation = validateDrumPattern(raw.drums.patternVariation)
+    }
+    if (raw.drums?.patternFill) composition.drums.patternFill = validateDrumPattern(raw.drums.patternFill)
     const chords = raw.pad?.chords ?? []
     if (!Array.isArray(chords)) throw new DuetError('SHARE_DATA_INVALID', 'Invalid pad chords.')
     composition.pad.chords = chords.map((ch) => validateChord(ch))

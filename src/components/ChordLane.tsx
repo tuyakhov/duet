@@ -46,6 +46,7 @@ export function ChordLane() {
   const chordLeft = (step: number) => step * (STEP_W + STEP_GAP)
 
   return (
+    <>
     <div className="grid-wrap">
       <div className="chord-lane" style={{ gridTemplateColumns: `repeat(16, ${STEP_W}px)` }}>
         {Array.from({ length: LOOP_LENGTH }, (_, step) => (
@@ -78,24 +79,33 @@ export function ChordLane() {
         )}
       </div>
 
-      {paletteStep !== null && (
-        <div className="chord-palette" style={{ left: Math.min(chordLeft(paletteStep), 420), top: -46 }}>
-          {palette.map((p) => (
-            <button
-              key={p.label + p.pitches[0]}
-              onClick={() => {
-                const duration = Math.min(4, LOOP_LENGTH - paletteStep)
-                humanActions.addChord(paletteStep, duration, p.pitches)
-                setPaletteStep(null)
-              }}
-              title={p.pitches.join(' ')}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
+
+    {paletteStep !== null && (
+      <div className="chord-chooser" role="dialog" aria-label={`Add a chord at step ${paletteStep}`}>
+        <span className="chord-chooser-label">
+          Chord at step {paletteStep} · {musicalKey} {scale}
+        </span>
+        {palette.map((p) => (
+          <button
+            key={p.label + p.pitches[0]}
+            className="chord-chooser-btn"
+            onClick={() => {
+              const duration = Math.min(4, LOOP_LENGTH - paletteStep)
+              humanActions.addChord(paletteStep, duration, p.pitches)
+              setPaletteStep(null)
+            }}
+            title={p.pitches.join(' ')}
+          >
+            {p.label}
+          </button>
+        ))}
+        <button className="chord-chooser-cancel" onClick={() => setPaletteStep(null)} aria-label="Cancel">
+          ✕
+        </button>
+      </div>
+    )}
+    </>
   )
 }
 

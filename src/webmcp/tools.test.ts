@@ -96,7 +96,7 @@ describe('dynamic compose toolset', () => {
   })
 
   it('studio_set_key transposes by default and can be told not to', async () => {
-    await call('lead_edit', { op: 'add_notes', notes: [{ step: 0, pitch: 'C4' }] })
+    store().apply('human', (c) => ops.addNotes(c, 'lead', [{ step: 0, pitch: 'C4' }]))
     await call('studio_set_key', { key: 'D' })
     expect(store().composition.lead.notes[0].pitch).toBe('D4')
     await call('studio_set_key', { key: 'E', transposeExisting: false })
@@ -210,6 +210,7 @@ describe('instrument editing tools', () => {
   })
 
   it('surfaces validation failures with codes', async () => {
+    store().apply('human', (c) => ops.setContract(c, { melodyLocked: false, preserve: { pitch: false, timing: false, velocity: false } }))
     const err = await callExpectingError('lead_edit', {
       op: 'add_notes',
       notes: [{ step: 99, pitch: 'C4' }],
@@ -252,6 +253,124 @@ describe('performance tools', () => {
     await call('studio_enter_performance')
     await call('performance_set_track_mix', { instrument: 'lead', volume: 0.3, muted: true })
     expect(store().composition.lead.mixer).toEqual({ volume: 0.3, muted: true })
+  })
+})
+
+describe('Musical Contract enforcement', () => {
+  it('locked melody: agent note edits pause for approval; approval applies them', async () => {
+    store().apply('human', (c) => ops.replaceNotes(c, 'lead', [{ step: 0, pitch: 'C4' }]))
+    const lead = computeTools().find((t) => t.name === 'lead_edit')!
+    const pending = lead.execute(
+      { op: 'add_notes', notes: [{ step: 4, pitch: 'E4' }] },
+      {},
+    ) as Promise<Record<string, unknown>>
+    await vi.waitFor(() => expect(store().pendingEdit).not.toBeNull())
+    expect(store().pendingEdit?.title).toContain('locked melody')
+    store().resolveEditApproval(true)
+    const res = await pending
+    expect(res.ok).toBe(true)
+    expect(store().composition.lead.notes).toHaveLength(2)
+  })
+
+  it('locked melody: declining rejects with CONTRACT_VIOLATION and changes nothing', async () => {
+    store().apply('human', (c) => ops.replaceNotes(c, 'lead', [{ step: 0, pitch: 'C4' }]))
+    const lead = computeTools().find((t) => t.name === 'lead_edit')!
+    const pending = lead.execute({ op: 'remove_steps', steps: [0] }, {}) as Promise<unknown>
+    await vi.waitFor(() => expect(store().pendingEdit).not.toBeNull())
+    store().resolveEditApproval(false)
+    await expect(pending).rejects.toMatchObject({ code: 'CONTRACT_VIOLATION' })
+    expect(store().composition.lead.notes).toHaveLength(1)
+  })
+
+  it('unlocked melody still honours preserve flags', async () => {
+    store().apply('human', (c) => ops.replaceNotes(c, 'lead', [{ step: 0, pitch: 'C4' }]))
+    store().apply('human', (c) => ops.setContract(c, { melodyLocked: false, preserve: { velocity: false } }))
+    let err = await callExpectingError('lead_edit', { op: 'patch_steps', steps: [0], pitch: 'D4' })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+    err = await callExpectingError('lead_edit', { op: 'replace_notes', notes: [] })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+    // velocity was released — patching it is fine
+    const res = await call('lead_edit', { op: 'patch_steps', steps: [0], velocity: 0.4 })
+    expect(res.ok).toBe(true)
+    expect(store().composition.lead.notes[0].velocity).toBe(0.4)
+  })
+
+  it('closed instruments reject agent edits and additions', async () => {
+    await call('studio_add_instrument', { instrument: 'drums' })
+    store().apply('human', (c) => ops.setContract(c, { agentMayEdit: { drums: false, pad: false } }))
+    let err = await callExpectingError('drums_edit', { op: 'set_steps', voice: 'kick', steps: [0] })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+    err = await callExpectingError('studio_add_instrument', { instrument: 'pad' })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+  })
+
+  it('mix permission gates set_mix and performance_set_track_mix', async () => {
+    store().apply('human', (c) => ops.setContract(c, { agentMayEdit: { mix: false } }))
+    let err = await callExpectingError('lead_edit', { op: 'set_mix', volume: 0.2 })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+    await call('studio_enter_performance')
+    err = await callExpectingError('performance_set_track_mix', { instrument: 'lead', volume: 0.2 })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+  })
+
+  it('maxIntensity caps agent energy with a warning', async () => {
+    store().apply('human', (c) => ops.setContract(c, { maxIntensity: 0.5 }))
+    await call('studio_enter_performance')
+    const res = await call('performance_set_energy', { energy: 0.95 })
+    expect(store().energy).toBe(0.5)
+    expect(String((res.warnings as string[])[0])).toContain('caps intensity')
+  })
+
+  it('tempo and key locks reject agent changes', async () => {
+    store().apply('human', (c) => ops.setContract(c, { lockTempo: true, lockKey: true }))
+    let err = await callExpectingError('studio_set_tempo', { bpm: 140 })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+    err = await callExpectingError('studio_set_key', { key: 'D' })
+    expect(err.code).toBe('CONTRACT_VIOLATION')
+  })
+
+  it('the contract is visible in the session snapshot', async () => {
+    const res = await call('studio_get_session')
+    const session = res.session as { musicalContract: { melodyLocked: boolean }; humanize: number }
+    expect(session.musicalContract.melodyLocked).toBe(true)
+    expect(typeof session.humanize).toBe('number')
+  })
+})
+
+describe('phrase sections', () => {
+  it('drums_edit writes variation and fill slots; snapshot reports the phrase', async () => {
+    await call('studio_add_instrument', { instrument: 'drums' })
+    const kick = Array.from({ length: 16 }, (_, i) => i % 4 === 0)
+    await call('drums_edit', { op: 'replace_pattern', pattern: { kick } })
+    await call('drums_edit', { op: 'set_steps', voice: 'snare', steps: [12, 13, 14, 15], section: 'fill' })
+    expect(store().composition.drums.patternFill?.snare.filter(Boolean)).toHaveLength(4)
+    const session = (await call('studio_get_session')).session as {
+      phrase: { enabled: boolean; drums: { hasFill: boolean } }
+    }
+    expect(session.phrase.enabled).toBe(true)
+    expect(session.phrase.drums.hasFill).toBe(true)
+  })
+
+  it('bass sections: copy_from_main, edit, clear_section', async () => {
+    await call('studio_add_instrument', { instrument: 'bass' })
+    await call('bass_edit', { op: 'replace_notes', notes: [{ step: 0, pitch: 'C2', duration: 4 }] })
+    await call('bass_edit', { op: 'copy_from_main', section: 'variation' })
+    expect(store().composition.bass.notesVariation).toHaveLength(1)
+    await call('bass_edit', { op: 'add_notes', notes: [{ step: 8, pitch: 'G1' }], section: 'variation' })
+    expect(store().composition.bass.notesVariation).toHaveLength(2)
+    expect(store().composition.bass.notes).toHaveLength(1)
+    await call('bass_edit', { op: 'clear_section', section: 'variation' })
+    expect(store().composition.bass.notesVariation).toBeUndefined()
+  })
+
+  it('lead and keys reject non-main sections', async () => {
+    store().apply('human', (c) => ops.setContract(c, { melodyLocked: false, preserve: { pitch: false, timing: false, velocity: false } }))
+    const err = await callExpectingError('lead_edit', {
+      op: 'add_notes',
+      notes: [{ step: 0, pitch: 'C4' }],
+      section: 'fill',
+    })
+    expect(err.code).toBe('INVALID_INPUT')
   })
 })
 

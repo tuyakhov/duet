@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { midiToPitch, parsePitch, prefersFlats, scaleMidiSet } from '../engine/music'
+import { viewMelodicSection } from '../engine/ops'
+import type { Note } from '../engine/types'
 import { LOOP_LENGTH } from '../engine/types'
+
+const EMPTY_NOTES: Note[] = []
 import { humanActions } from '../state/actions'
 import { useStudioStore } from '../state/store'
 import { LABEL_W, STEP_GAP, STEP_W, spanWidth, stepLeft } from './trackMeta'
@@ -23,12 +27,14 @@ export function PianoRoll({
   id,
   lowOctave,
   highOctave,
+  section = 'main',
 }: {
   id: 'lead' | 'keys' | 'bass'
   lowOctave: number
   highOctave: number
+  section?: 'main' | 'variation' | 'fill'
 }) {
-  const notes = useStudioStore((s) => s.composition[id].notes)
+  const notes = useStudioStore((s) => viewMelodicSection(s.composition, id, section) ?? EMPTY_NOTES)
   const musicalKey = useStudioStore((s) => s.composition.key)
   const scale = useStudioStore((s) => s.composition.scale)
   const playStep = useStudioStore((s) => s.playback.step)
@@ -66,12 +72,12 @@ export function PianoRoll({
       if (!d) return
       draftRef.current = null
       setDraftState(null)
-      humanActions.drawNote(id, d.step, d.pitch, d.duration)
+      humanActions.drawNote(id, d.step, d.pitch, d.duration, section)
       useStudioStore.getState().setSelection(id, [d.step])
     }
     window.addEventListener('mouseup', commit)
     return () => window.removeEventListener('mouseup', commit)
-  }, [id])
+  }, [id, section])
 
   const rootPc = useMemo(() => {
     const m = parsePitch(`${musicalKey}4`)
@@ -130,7 +136,7 @@ export function PianoRoll({
             }}
             title={`${n.pitch} · step ${n.step} · ${n.duration} step${n.duration > 1 ? 's' : ''} — click to delete`}
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => editable && humanActions.removeNote(id, n.step, n.pitch)}
+            onClick={() => editable && humanActions.removeNote(id, n.step, n.pitch, section)}
           />
         )
       })}

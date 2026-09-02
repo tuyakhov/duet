@@ -25,7 +25,19 @@ export interface Note {
   duration: number
   /** 0..1 */
   velocity: number
+  /**
+   * Expressive micro-timing in steps (-0.45..0.45, default 0). Negative pushes
+   * the note early, positive lays it back. Small values — ±0.05 is subtle,
+   * ±0.15 is loose.
+   */
+  offset?: number
 }
+
+/** Which pattern slot of a phrase a bar plays. */
+export type PatternSection = 'main' | 'variation' | 'fill'
+
+/** The fixed 4-bar phrase plan: main, main, variation, fill. */
+export const PHRASE_PLAN: PatternSection[] = ['main', 'main', 'variation', 'fill']
 
 /** A pad chord: several pitches sounding together from a start step. */
 export interface Chord {
@@ -62,12 +74,18 @@ export interface KeysTrack {
 
 export interface BassTrack {
   notes: Note[]
+  /** Optional bar-3 variation and bar-4 fill (fall back to main when absent). */
+  notesVariation?: Note[]
+  notesFill?: Note[]
   preset: string
   mixer: MixerSettings
 }
 
 export interface DrumTrack {
   pattern: DrumPattern
+  /** Optional bar-3 variation and bar-4 fill (fall back to main when absent). */
+  patternVariation?: DrumPattern
+  patternFill?: DrumPattern
   preset: string
   mixer: MixerSettings
 }
@@ -76,6 +94,44 @@ export interface PadTrack {
   chords: Chord[]
   preset: string
   mixer: MixerSettings
+}
+
+export type GrooveFeel = 'straight' | 'swung' | 'laidback'
+export type Density = 'sparse' | 'balanced' | 'full'
+export type HarmonicFreedom = 'safe' | 'colourful' | 'adventurous'
+
+export const GROOVE_FEELS: GrooveFeel[] = ['straight', 'swung', 'laidback']
+export const DENSITIES: Density[] = ['sparse', 'balanced', 'full']
+export const HARMONIC_FREEDOMS: HarmonicFreedom[] = ['safe', 'colourful', 'adventurous']
+
+/**
+ * The Musical Contract: constraints the human sets before handing the session
+ * to an agent. It is live shared state — every WebMCP tool enforces it.
+ */
+export interface MusicalContract {
+  /** The lead melody belongs to the human. Agent note edits need approval. */
+  melodyLocked: boolean
+  /** Which parts the agent may touch. `mix` covers volume/mute everywhere. */
+  agentMayEdit: {
+    keys: boolean
+    drums: boolean
+    bass: boolean
+    pad: boolean
+    mix: boolean
+  }
+  /** What must survive if the agent is allowed near the melody at all. */
+  preserve: {
+    pitch: boolean
+    timing: boolean
+    velocity: boolean
+  }
+  feel: GrooveFeel
+  density: Density
+  harmony: HarmonicFreedom
+  /** Hard ceiling for performance energy, 0..1. */
+  maxIntensity: number
+  lockTempo: boolean
+  lockKey: boolean
 }
 
 /** The authored composition — everything that is saved, shared and undoable. */
@@ -93,6 +149,13 @@ export interface Composition {
   swing: number
   /** Global reverb send 0..1 — how much "room" around lead/keys/pad. */
   space: number
+  /**
+   * Deterministic humanization 0..1: subtle per-step micro-timing and
+   * velocity variation, seeded by step and voice so it is identical on
+   * every pass — groove, not randomness.
+   */
+  humanize: number
+  contract: MusicalContract
   lead: LeadTrack
   keys: KeysTrack
   bass: BassTrack
@@ -111,6 +174,8 @@ export interface PlaybackState {
   playing: boolean
   /** Current step 0..15 while playing, -1 otherwise. */
   step: number
+  /** Current bar of the 4-bar phrase (0..3) while playing, -1 otherwise. */
+  bar: number
 }
 
 export interface SelectionState {
@@ -147,10 +212,12 @@ export type ScaleName = (typeof SCALE_NAMES)[number]
 
 export const KEYS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'] as const
 
-export const LEAD_PRESETS = ['neon', 'glass', 'saw', 'laser', 'chip', 'velvet', 'brass'] as const
-export const KEYS_PRESETS = ['tines', 'bell', 'organ'] as const
-export const BASS_PRESETS = ['warm', 'growl', 'sub', 'rubber', 'buzz'] as const
-export const PAD_PRESETS = ['haze', 'strings', 'choir', 'shimmer', 'dark'] as const
+export const LEAD_PRESETS = [
+  'neon', 'hyper', 'glass', 'saw', 'wire', 'laser', 'chip', 'velvet', 'brass', 'air',
+] as const
+export const KEYS_PRESETS = ['tines', 'bell', 'organ', 'clav', 'pluck'] as const
+export const BASS_PRESETS = ['warm', 'reese', 'growl', 'sub', 'rubber', 'buzz', 'acid'] as const
+export const PAD_PRESETS = ['haze', 'analog', 'strings', 'choir', 'shimmer', 'dark', 'vapor'] as const
 export const DRUM_PRESETS = ['analog', 'punch', 'boom'] as const
 
 export const INSTRUMENT_LABELS: Record<InstrumentId, string> = {

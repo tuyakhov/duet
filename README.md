@@ -17,7 +17,25 @@ A prompt-to-music generator only needs an API. Duet needs the four things only W
 1. **Bring your own agent.** The page contains no model. Any WebMCP-capable agent — ChatGPT's browser, Chrome's agent surface, an extension — can sit down at the same instrument.
 2. **Shared live state.** The melody you just drew exists only in this tab's memory. There is no server the agent could query. `studio_get_session` is the *only* way any agent can hear what you played — and it always returns the live, unsaved session both of you are editing.
 3. **Dynamic capabilities.** The exposed toolset *is* the state of the studio. Add a Drum Machine and `drums_edit` appears in the browser's tool registry; remove it and the tool is gone. Enter Performance mode and every compose tool is withdrawn, replaced by seven performance tools. The agent's capabilities track what's physically in the rack.
-4. **Human intervention.** `studio_publish` pauses mid-tool-call and opens an in-page approval modal. The tool only resumes — returning the remix link or a `PUBLISH_CANCELLED` error — after the human decides. Consequential actions stay under human control.
+4. **Human intervention.** `studio_publish` pauses mid-tool-call and opens an in-page approval modal. The tool only resumes — returning the remix link or a `PUBLISH_CANCELLED` error — after the human decides. And the **Musical Contract** goes further: if the agent tries to edit the human's locked melody, the tool call pauses, the page shows exactly what would change, and the human approves or declines before the tool resumes. Consequential actions stay under human control.
+
+## The Musical Contract
+
+Before (or while) the agent plays, the human sets the terms of the collaboration in the Musical Contract panel — and those terms are **live shared state that every WebMCP tool enforces**:
+
+- **Melody ownership** — locked by default. Agent note edits to the lead pause for in-page human approval with a readable diff; declining returns `CONTRACT_VIOLATION` to the agent.
+- **Agent may edit** — per-part switches for keys / drums / bass / pad / mix. Closed parts reject agent calls.
+- **Preserve** — when the melody is unlocked, pitch / timing / velocity can still be individually protected.
+- **Groove feel** (straight / swung / laid-back), **density** (sparse / balanced / full) and **harmonic freedom** (safe / colourful / adventurous) — read by the agent from `studio_get_session`.
+- **Max intensity** — a hard cap on `performance_set_energy` (clamped with a warning).
+- **Tempo / key locks** — locked values reject agent changes.
+
+## Expression and phrasing
+
+- Every note carries `velocity` **and a small timing `offset`** (±0.45 steps); tools are told to preserve the human's expressive values and vary their own.
+- **Humanize** (0–1) applies deterministic, seeded micro-timing (±9 ms) and velocity (±7%) per step and voice — groove, not randomness — alongside **swing** and per-voice **accent maps** on the drums.
+- Playback runs a **4-bar phrase: main → main → variation → fill.** Drums and bass each have optional variation (bar 3) and fill (bar 4) pattern slots, editable via tabs in their cards or the `section` parameter on `drums_edit`/`bass_edit` (`copy_from_main` seeds a slot; `clear_section` falls back to main). Absent slots fall back to main — no variants means the familiar single loop.
+- The sound path: kick-synced ducking on pad and bass, a subtle synced delay on the lead, a compressor + limiter master chain with real headroom, and balanced default volumes.
 
 ## The human–agent interaction model
 
@@ -93,21 +111,21 @@ Sharing serializes only the composition (never history or playback) into `#s=<ba
 
 | Tool | Operations (one enum per schema) |
 |---|---|
-| `lead_edit` | `replace_notes`, `add_notes`, `patch_steps`, `remove_steps`, `set_preset`, `set_mix` |
+| `lead_edit` | `replace_notes`, `add_notes`, `patch_steps` (pitch/velocity/duration/offset), `remove_steps`, `set_preset`, `set_mix` — note ops are contract-guarded |
 | `keys_edit` | same operations as `lead_edit` (electric-piano track) |
-| `bass_edit` | same operations as `lead_edit` |
-| `drums_edit` | `replace_pattern`, `set_steps`, `clear_steps`, `set_kit`, `set_mix` |
+| `bass_edit` | `lead_edit` ops plus `section` (main/variation/fill), `copy_from_main`, `clear_section` |
+| `drums_edit` | `replace_pattern`, `set_steps`, `clear_steps`, `set_kit`, `set_mix`, plus `section`, `copy_from_main`, `clear_section` |
 | `pad_edit` | `replace_chords`, `add_chord`, `remove_chord`, `set_preset`, `set_mix` |
 
-Presets: lead `neon · glass · saw · laser · chip · velvet · brass`, keys `tines · bell · organ`,
-bass `warm · growl · sub · rubber · buzz`, pad `haze · strings · choir · shimmer · dark`,
-drum kits `analog · punch · boom`.
+Presets: lead `neon · hyper · glass · saw · wire · laser · chip · velvet · brass · air`,
+keys `tines · bell · organ · clav · pluck`, bass `warm · reese · growl · sub · rubber · buzz · acid`,
+pad `haze · analog · strings · choir · shimmer · dark · vapor`, drum kits `analog · punch · boom`.
 
 **Performance mode (the only tools registered in performance):**
 
 `performance_get_state`, `performance_play`, `performance_stop`, `performance_set_energy`, `performance_set_track_mix`, `performance_launch_breakdown`, `performance_return_to_compose`
 
-Every response carries `ok`, `message`, `sessionVersion`, `currentMode`, `playbackState`, plus `changedTracks` / `changedSteps` / `warnings` for mutations. Errors carry typed codes (`INVALID_PITCH`, `DUPLICATE_INSTRUMENT`, `WRONG_MODE`, `AUDIO_PERMISSION_REQUIRED`, `PUBLISH_CANCELLED`, …). Tools are **mode-guarded even if a stale registration were somehow invoked**.
+Every response carries `ok`, `message`, `sessionVersion`, `currentMode`, `playbackState`, plus `changedTracks` / `changedSteps` / `warnings` for mutations. Errors carry typed codes (`INVALID_PITCH`, `DUPLICATE_INSTRUMENT`, `WRONG_MODE`, `CONTRACT_VIOLATION`, `AUDIO_PERMISSION_REQUIRED`, `PUBLISH_CANCELLED`, …). Tools are **mode-guarded and contract-guarded even if a stale registration were somehow invoked**.
 
 ## Dynamic registration
 
@@ -128,6 +146,20 @@ npm run preview    # serve the production build
 ```
 
 No backend, no environment variables, no API keys.
+
+## Deploying
+
+`npm run build` produces a fully static site in `dist/` — host it anywhere (Vercel, Netlify, Cloudflare Pages, GitHub Pages). Two things matter for WebMCP in production:
+
+- Serve over **HTTPS** (WebMCP is only exposed to secure origins).
+- Send the `Origin-Agent-Cluster: ?1` header if your host lets you (the dev server already does); WebMCP requires an origin-isolated document. Enrol the deployed origin in the [WebMCP origin trial](https://developer.chrome.com/blog/ai-webmcp-origin-trial) for visitors who haven't flipped the Chrome flag.
+
+## Privacy & security
+
+- Everything runs in the browser. There is no server, no analytics, no telemetry, and nothing is uploaded — the only outbound requests are for the page's own assets.
+- Your session autosaves to `localStorage` in your own browser. Share links carry the composition *inside the URL*; anyone with the link can play and remix it, and nothing else about you travels with it.
+- WebMCP tools validate every input and enforce the Musical Contract; they never execute arbitrary instructions from an agent — they expose a fixed, typed set of musical operations.
+- The dev-only test harness (`window.__duetHarness`) is stripped from production builds.
 
 ## Browser / WebMCP setup
 
@@ -159,28 +191,31 @@ A **dev-only harness** (`window.__duetHarness`, absent from production builds) i
 | ⏱ | Beat |
 |---|---|
 | 0:00 | Click **Enable Audio**. Draw a 5–8 note melody on the Lead roll. Press play — just a lonely melody. |
-| 0:30 | Point at the capability panel: *nine studio tools plus `lead_edit` — nothing else exists yet.* |
-| 0:45 | Give the agent the synthwave prompt. It calls `studio_get_session` and reads the exact unsaved notes. |
-| 1:00 | It adds Drums → the module slides in **and `drums_edit` appears in the panel**. Then Bass, then Pad — each instrument brings its own WebMCP capability. |
-| 1:30 | It programs patterns and mixes. Every edit pulses mint and lands in the timeline as `AGENT`. |
-| 1:45 | It calls `studio_enter_performance` — the room transforms, and the panel now shows **only** seven performance tools. It plays the arrangement, rides the energy, maybe drops a breakdown. |
-| 2:15 | Return to Compose. Manually move two melody notes. Ask: *"Adapt the accompaniment to my changes and create a more dramatic ending."* It re-reads the session, patches bass/pad/drums around **your** notes, performs again. |
+| 0:20 | Point at the **Musical Contract**: melody locked to you, agent may edit drums/bass/pad/keys/mix, max intensity 90%. Then the capability panel: *the studio tools plus `lead_edit` — nothing else exists yet.* |
+| 0:45 | Give the agent the synthwave prompt. It calls `studio_get_session` and reads the exact unsaved notes — velocities, timing offsets, and the contract's terms. |
+| 1:00 | It adds Drums → the module slides in **and `drums_edit` appears in the panel**. Then Bass, then Pad — each instrument brings its own WebMCP capability. It writes a bar-4 fill and a bass variation: the loop becomes a **4-bar phrase**. |
+| 1:30 | Every edit pulses and lands in the timeline as `AGENT`. Ask it to change one of *your* melody notes — **the tool call pauses and Duet asks you**, showing the exact diff. Decline it. |
+| 1:50 | It calls `studio_enter_performance` — the room transforms, and the panel now shows **only** seven performance tools. It plays, rides the energy (capped by your contract), drops a breakdown. |
+| 2:20 | Return to Compose. Move two melody notes yourself. Ask: *"Adapt the accompaniment to my changes and create a more dramatic ending."* It re-reads the session, patches bass/pad/drums around **your** notes, performs again. |
 | 2:45 | Ask it to publish. **Duet pauses the tool and asks you** to approve the title. Approve → confetti → copy the remix link. *"I played the melody. My agent built the band. What will yours create?"* |
 
 ## Honest limitations
 
-- One 16-step loop — this is an instrument for a duet, not a DAW.
-- Notes are drawn/deleted/redrawn on the grid; there's no drag-to-move or tail-resize of an existing note (drag while drawing sets its length).
+- One 16-step loop per pattern slot, arranged into a 4-bar phrase — this is an instrument for a duet, not a DAW. There is no song-length arrangement yet (see below).
+- Notes are drawn/deleted/redrawn on the grid; there's no drag-to-move or tail-resize of an existing note (drag while drawing sets its length). Per-note timing offsets are set by agents or humanize, not drawn.
+- Only drums and bass have variation/fill slots; lead, keys and pad play their main pattern through the phrase.
+- The contract's feel / density / harmony settings are advisory to the agent (surfaced in every session read); the enforced terms are the melody lock, preserve flags, per-instrument access, mix access, intensity cap and tempo/key locks.
 - Level meters and the breakdown timer are approximations tuned for the demo, not metering-grade.
 - The capability panel reports runtime detection only; WebMCP gives a page no way to know whether an agent is actually attached.
-- The share URL carries the whole composition (~1–2 KB base64) — fine for links, but it is visible data, not a private upload.
+- The share URL carries the whole composition (~2–3 KB base64) — fine for links, but it is visible data, not a private upload.
 - Undo covers composition edits; mode switches, playback and timeline entries are deliberately not undoable.
+- Synthesis is Tone.js only (no samples); it sounds like a synth studio, by design.
 
 ## Future possibilities
 
+- **Song mode** — a section list (intro → build → drop → breakdown → drop → outro) the engine walks bar by bar using mutes, energy and the phrase slots as overlays, generated deterministically from the loop and arrangeable by the agent through a `song_edit` tool.
 - **WebMIDI input** — play the melody on a hardware keyboard (the on-screen flow already covers the full demo).
-- More loops/patterns and song arrangement; more instruments (arp, FX sends).
-- An `elicitation`-style tool for the agent to *ask* the human a musical question mid-arrangement.
+- Variation/fill slots for lead, keys and pad; a second chord loop ("section B").
 - Per-note agent "suggestions" the human can accept/reject in place.
 - Rendering the loop to WAV for export.
 

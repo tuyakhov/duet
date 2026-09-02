@@ -9,10 +9,12 @@
 import { DuetError } from './errors'
 import {
   assertDrumVoice,
+  assertHumanize,
   assertInstrumentId,
   assertKey,
   assertPreset,
   assertScale,
+  assertSection,
   assertSpace,
   assertStep,
   assertSteps,
@@ -20,6 +22,7 @@ import {
   assertTempo,
   assertVolume,
   validateChord,
+  validateContractPatch,
   validateDrumPattern,
   validateNote,
   validateNotes,
@@ -30,10 +33,12 @@ import { INSTRUMENT_LABELS, LOOP_LENGTH } from './types'
 import type {
   Chord,
   Composition,
+  DrumPattern,
   DrumVoice,
   InstrumentId,
   MutationReport,
   Note,
+  PatternSection,
 } from './types'
 
 export interface OpResult {
@@ -148,10 +153,13 @@ export function setKeyScale(
   }
 }
 
-/** Groove settings: swing (off-beat delay) and space (global reverb send). */
-export function setGroove(c: Composition, changes: { swing?: unknown; space?: unknown }): OpResult {
-  if (changes.swing === undefined && changes.space === undefined) {
-    throw new DuetError('INVALID_INPUT', 'Provide swing, space, or both.')
+/** Groove settings: swing, space (reverb) and deterministic humanization. */
+export function setGroove(
+  c: Composition,
+  changes: { swing?: unknown; space?: unknown; humanize?: unknown },
+): OpResult {
+  if (changes.swing === undefined && changes.space === undefined && changes.humanize === undefined) {
+    throw new DuetError('INVALID_INPUT', 'Provide swing, space, humanize, or a combination.')
   }
   const next = clone(c)
   const parts: string[] = []
@@ -163,7 +171,52 @@ export function setGroove(c: Composition, changes: { swing?: unknown; space?: un
     next.space = assertSpace(changes.space)
     parts.push(`space ${Math.round(next.space * 100)}%`)
   }
+  if (changes.humanize !== undefined) {
+    next.humanize = assertHumanize(changes.humanize)
+    parts.push(`humanize ${Math.round(next.humanize * 100)}%`)
+  }
   return { composition: next, report: report(`set ${parts.join(', ')}`, ['session']) }
+}
+
+/** Update the Musical Contract (human-only — no agent tool edits this). */
+export function setContract(c: Composition, patch: unknown): OpResult {
+  const before = c.contract
+  const nextContract = validateContractPatch(before, patch)
+  const next = clone(c)
+  next.contract = nextContract
+  const changes: string[] = []
+  if (nextContract.melodyLocked !== before.melodyLocked) {
+    changes.push(nextContract.melodyLocked ? 'locked the melody' : 'unlocked the melody')
+  }
+  for (const k of ['keys', 'drums', 'bass', 'pad', 'mix'] as const) {
+    if (nextContract.agentMayEdit[k] !== before.agentMayEdit[k]) {
+      changes.push(`${nextContract.agentMayEdit[k] ? 'opened' : 'closed'} ${k} to the agent`)
+    }
+  }
+  for (const k of ['pitch', 'timing', 'velocity'] as const) {
+    if (nextContract.preserve[k] !== before.preserve[k]) {
+      changes.push(`${nextContract.preserve[k] ? 'protected' : 'released'} melody ${k}`)
+    }
+  }
+  if (nextContract.feel !== before.feel) changes.push(`feel → ${nextContract.feel}`)
+  if (nextContract.density !== before.density) changes.push(`density → ${nextContract.density}`)
+  if (nextContract.harmony !== before.harmony) changes.push(`harmony → ${nextContract.harmony}`)
+  if (nextContract.maxIntensity !== before.maxIntensity) {
+    changes.push(`max intensity → ${Math.round(nextContract.maxIntensity * 100)}%`)
+  }
+  if (nextContract.lockTempo !== before.lockTempo) {
+    changes.push(nextContract.lockTempo ? 'locked the tempo' : 'unlocked the tempo')
+  }
+  if (nextContract.lockKey !== before.lockKey) {
+    changes.push(nextContract.lockKey ? 'locked the key' : 'unlocked the key')
+  }
+  if (changes.length === 0) {
+    throw new DuetError('INVALID_INPUT', 'No contract changes provided.')
+  }
+  return {
+    composition: next,
+    report: report(`updated the Musical Contract: ${changes.join(', ')}`, ['session']),
+  }
 }
 
 export function addInstrument(c: Composition, id: unknown): OpResult {
@@ -196,8 +249,16 @@ export function removeInstrument(c: Composition, id: unknown): OpResult {
   const next = clone(c)
   next.instruments = next.instruments.filter((i) => i !== instrument)
   // Clear its content so a re-add starts fresh.
-  if (instrument === 'drums') next.drums.pattern = emptyDrumPattern()
-  if (instrument === 'bass') next.bass.notes = []
+  if (instrument === 'drums') {
+    next.drums.pattern = emptyDrumPattern()
+    delete next.drums.patternVariation
+    delete next.drums.patternFill
+  }
+  if (instrument === 'bass') {
+    next.bass.notes = []
+    delete next.bass.notesVariation
+    delete next.bass.notesFill
+  }
   if (instrument === 'keys') next.keys.notes = []
   if (instrument === 'pad') next.pad.chords = []
   return {
@@ -269,6 +330,33 @@ function assertMelodic(id: unknown): MelodicId {
   return instrument
 }
 
+/** Only the bass has variation/fill slots among melodic tracks. */
+function assertMelodicSection(id: MelodicId, section: PatternSection): PatternSection {
+  if (section !== 'main' && id !== 'bass') {
+    throw new DuetError(
+      'INVALID_INPUT',
+      `Only the bass has ${section} bars — ${id} plays its main pattern through the phrase.`,
+    )
+  }
+  return section
+}
+
+function readMelodicSlot(c: Composition, id: MelodicId, section: PatternSection): Note[] {
+  if (section === 'main') return c[id].notes
+  if (section === 'variation') return c.bass.notesVariation ?? []
+  return c.bass.notesFill ?? []
+}
+
+function writeMelodicSlot(c: Composition, id: MelodicId, section: PatternSection, notes: Note[]) {
+  if (section === 'main') c[id].notes = notes
+  else if (section === 'variation') c.bass.notesVariation = notes
+  else c.bass.notesFill = notes
+}
+
+function sectionSuffix(section: PatternSection): string {
+  return section === 'main' ? '' : ` (${section} bar)`
+}
+
 /** Sort + drop exact duplicate (step,pitch) pairs, keeping the last occurrence. */
 function normalizeNotes(notes: Note[]): { notes: Note[]; warnings: string[] } {
   const seen = new Map<string, Note>()
@@ -280,16 +368,22 @@ function normalizeNotes(notes: Note[]): { notes: Note[]; warnings: string[] } {
   return { notes: [...seen.values()].sort((a, b) => a.step - b.step || a.pitch.localeCompare(b.pitch)), warnings }
 }
 
-export function replaceNotes(c: Composition, id: unknown, rawNotes: unknown): OpResult {
+export function replaceNotes(
+  c: Composition,
+  id: unknown,
+  rawNotes: unknown,
+  rawSection?: unknown,
+): OpResult {
   const instrument = assertMelodic(id)
   requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
   const { notes, warnings } = normalizeNotes(validateNotes(rawNotes))
   const next = clone(c)
-  next[instrument].notes = notes
+  writeMelodicSlot(next, instrument, section, notes)
   return {
     composition: next,
     report: report(
-      `wrote ${notes.length} ${INSTRUMENT_LABELS[instrument]} note${notes.length === 1 ? '' : 's'}`,
+      `wrote ${notes.length} ${INSTRUMENT_LABELS[instrument]} note${notes.length === 1 ? '' : 's'}${sectionSuffix(section)}`,
       [instrument],
       notes.map((n) => n.step),
       warnings,
@@ -297,18 +391,19 @@ export function replaceNotes(c: Composition, id: unknown, rawNotes: unknown): Op
   }
 }
 
-export function addNotes(c: Composition, id: unknown, rawNotes: unknown): OpResult {
+export function addNotes(c: Composition, id: unknown, rawNotes: unknown, rawSection?: unknown): OpResult {
   const instrument = assertMelodic(id)
   requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
   const added = validateNotes(rawNotes)
   if (added.length === 0) throw new DuetError('INVALID_INPUT', 'Provide at least one note to add.')
-  const { notes, warnings } = normalizeNotes([...c[instrument].notes, ...added])
+  const { notes, warnings } = normalizeNotes([...readMelodicSlot(c, instrument, section), ...added])
   const next = clone(c)
-  next[instrument].notes = notes
+  writeMelodicSlot(next, instrument, section, notes)
   return {
     composition: next,
     report: report(
-      `added ${added.length} note${added.length === 1 ? '' : 's'} to ${INSTRUMENT_LABELS[instrument]} (${describeSteps(added.map((n) => n.step))})`,
+      `added ${added.length} note${added.length === 1 ? '' : 's'} to ${INSTRUMENT_LABELS[instrument]}${sectionSuffix(section)} (${describeSteps(added.map((n) => n.step))})`,
       [instrument],
       added.map((n) => n.step),
       warnings,
@@ -316,43 +411,56 @@ export function addNotes(c: Composition, id: unknown, rawNotes: unknown): OpResu
   }
 }
 
-export function removeNotesAtSteps(c: Composition, id: unknown, rawSteps: unknown): OpResult {
+export function removeNotesAtSteps(
+  c: Composition,
+  id: unknown,
+  rawSteps: unknown,
+  rawSection?: unknown,
+): OpResult {
   const instrument = assertMelodic(id)
   requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
   const steps = new Set(assertSteps(rawSteps))
-  const before = c[instrument].notes.length
-  const next = clone(c)
-  next[instrument].notes = next[instrument].notes.filter((n) => !steps.has(n.step))
-  const removed = before - next[instrument].notes.length
+  const slot = readMelodicSlot(c, instrument, section)
+  const remaining = slot.filter((n) => !steps.has(n.step))
+  const removed = slot.length - remaining.length
   if (removed === 0) {
-    throw new DuetError('INVALID_INPUT', `No ${INSTRUMENT_LABELS[instrument]} notes start at ${describeSteps([...steps])}.`)
+    throw new DuetError('INVALID_INPUT', `No ${INSTRUMENT_LABELS[instrument]} notes start at ${describeSteps([...steps])}${sectionSuffix(section)}.`)
   }
+  const next = clone(c)
+  writeMelodicSlot(next, instrument, section, remaining)
   return {
     composition: next,
     report: report(
-      `removed ${removed} note${removed === 1 ? '' : 's'} from ${INSTRUMENT_LABELS[instrument]} (${describeSteps([...steps])})`,
+      `removed ${removed} note${removed === 1 ? '' : 's'} from ${INSTRUMENT_LABELS[instrument]}${sectionSuffix(section)} (${describeSteps([...steps])})`,
       [instrument],
       [...steps],
     ),
   }
 }
 
-/** Patch notes that start at the given steps (transpose pitch / velocity / duration). */
+/** Patch notes that start at the given steps (pitch / velocity / duration / timing offset). */
 export function patchNotesAtSteps(
   c: Composition,
   id: unknown,
   rawSteps: unknown,
-  changes: { pitch?: unknown; velocity?: unknown; duration?: unknown },
+  changes: { pitch?: unknown; velocity?: unknown; duration?: unknown; offset?: unknown },
+  rawSection?: unknown,
 ): OpResult {
   const instrument = assertMelodic(id)
   requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
   const steps = new Set(assertSteps(rawSteps))
-  if (changes.pitch === undefined && changes.velocity === undefined && changes.duration === undefined) {
-    throw new DuetError('INVALID_INPUT', 'Provide pitch, velocity or duration to patch.')
+  if (
+    changes.pitch === undefined &&
+    changes.velocity === undefined &&
+    changes.duration === undefined &&
+    changes.offset === undefined
+  ) {
+    throw new DuetError('INVALID_INPUT', 'Provide pitch, velocity, duration or offset to patch.')
   }
-  const next = clone(c)
   let touched = 0
-  next[instrument].notes = next[instrument].notes.map((n) => {
+  const patched = readMelodicSlot(c, instrument, section).map((n) => {
     if (!steps.has(n.step)) return n
     touched++
     return validateNote({
@@ -360,17 +468,19 @@ export function patchNotesAtSteps(
       pitch: changes.pitch !== undefined ? changes.pitch : n.pitch,
       duration: changes.duration !== undefined ? changes.duration : n.duration,
       velocity: changes.velocity !== undefined ? changes.velocity : n.velocity,
+      offset: changes.offset !== undefined ? changes.offset : n.offset,
     })
   })
   if (touched === 0) {
-    throw new DuetError('INVALID_INPUT', `No ${INSTRUMENT_LABELS[instrument]} notes start at ${describeSteps([...steps])}.`)
+    throw new DuetError('INVALID_INPUT', `No ${INSTRUMENT_LABELS[instrument]} notes start at ${describeSteps([...steps])}${sectionSuffix(section)}.`)
   }
-  const merged = normalizeNotes(next[instrument].notes)
-  next[instrument].notes = merged.notes
+  const merged = normalizeNotes(patched)
+  const next = clone(c)
+  writeMelodicSlot(next, instrument, section, merged.notes)
   return {
     composition: next,
     report: report(
-      `changed ${INSTRUMENT_LABELS[instrument]} ${describeSteps([...steps])}`,
+      `changed ${INSTRUMENT_LABELS[instrument]} ${describeSteps([...steps])}${sectionSuffix(section)}`,
       [instrument],
       [...steps],
       merged.warnings,
@@ -379,70 +489,202 @@ export function patchNotesAtSteps(
 }
 
 /** Human piano-roll toggle: add a note, or remove it if the identical cell is occupied. */
-export function toggleNoteCell(c: Composition, id: MelodicId, step: number, pitch: string, duration = 1): OpResult {
-  const existing = c[id].notes.find((n) => n.step === step && n.pitch === pitch)
+export function toggleNoteCell(
+  c: Composition,
+  id: MelodicId,
+  step: number,
+  pitch: string,
+  duration = 1,
+  section: PatternSection = 'main',
+): OpResult {
+  assertMelodicSection(id, section)
+  const slot = readMelodicSlot(c, id, section)
+  const existing = slot.find((n) => n.step === step && n.pitch === pitch)
+  const next = clone(c)
   if (existing) {
-    const next = clone(c)
-    next[id].notes = next[id].notes.filter((n) => !(n.step === step && n.pitch === pitch))
+    writeMelodicSlot(next, id, section, slot.filter((n) => !(n.step === step && n.pitch === pitch)))
     return {
       composition: next,
-      report: report(`removed a ${INSTRUMENT_LABELS[id]} note at step ${step}`, [id], [step]),
+      report: report(`removed a ${INSTRUMENT_LABELS[id]} note at step ${step}${sectionSuffix(section)}`, [id], [step]),
     }
   }
   const note = validateNote({ step, pitch, duration, velocity: 0.85 })
-  const next = clone(c)
-  next[id].notes = [...next[id].notes, note].sort((a, b) => a.step - b.step || a.pitch.localeCompare(b.pitch))
+  writeMelodicSlot(
+    next,
+    id,
+    section,
+    [...slot, note].sort((a, b) => a.step - b.step || a.pitch.localeCompare(b.pitch)),
+  )
   return {
     composition: next,
-    report: report(`drew a ${INSTRUMENT_LABELS[id]} note (${pitch} at step ${step})`, [id], [step]),
+    report: report(`drew a ${INSTRUMENT_LABELS[id]} note (${pitch} at step ${step})${sectionSuffix(section)}`, [id], [step]),
+  }
+}
+
+/** Copy the main pattern into a variation/fill slot as a starting point. */
+export function copyMelodicSectionFromMain(c: Composition, id: unknown, rawSection: unknown): OpResult {
+  const instrument = assertMelodic(id)
+  requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
+  if (section === 'main') throw new DuetError('INVALID_INPUT', 'Pick variation or fill to copy into.')
+  const next = clone(c)
+  writeMelodicSlot(next, instrument, section, JSON.parse(JSON.stringify(c[instrument].notes)) as Note[])
+  return {
+    composition: next,
+    report: report(`copied the ${INSTRUMENT_LABELS[instrument]} main bar into the ${section}`, [instrument]),
+  }
+}
+
+/** Remove a variation/fill slot so the bar falls back to main. */
+export function clearMelodicSection(c: Composition, id: unknown, rawSection: unknown): OpResult {
+  const instrument = assertMelodic(id)
+  requirePresent(c, instrument)
+  const section = assertMelodicSection(instrument, assertSection(rawSection))
+  if (section === 'main') throw new DuetError('INVALID_INPUT', 'Clear removes variation or fill bars, not main.')
+  const next = clone(c)
+  if (section === 'variation') delete next.bass.notesVariation
+  else delete next.bass.notesFill
+  return {
+    composition: next,
+    report: report(`cleared the ${INSTRUMENT_LABELS[instrument]} ${section} bar — it falls back to main`, [instrument]),
   }
 }
 
 // ------------------------------------------------------------------- drums
 
-export function replaceDrumPattern(c: Composition, rawPattern: unknown): OpResult {
+function readDrumSlot(c: Composition, section: PatternSection): DrumPattern {
+  if (section === 'variation') return c.drums.patternVariation ?? emptyDrumPattern()
+  if (section === 'fill') return c.drums.patternFill ?? emptyDrumPattern()
+  return c.drums.pattern
+}
+
+function writeDrumSlot(c: Composition, section: PatternSection, pattern: DrumPattern) {
+  if (section === 'variation') c.drums.patternVariation = pattern
+  else if (section === 'fill') c.drums.patternFill = pattern
+  else c.drums.pattern = pattern
+}
+
+export function replaceDrumPattern(c: Composition, rawPattern: unknown, rawSection?: unknown): OpResult {
   requirePresent(c, 'drums')
+  const section = assertSection(rawSection)
   const pattern = validateDrumPattern(rawPattern)
   const next = clone(c)
-  next.drums.pattern = pattern
+  writeDrumSlot(next, section, pattern)
   const hits = countHits(pattern)
   const steps = hitSteps(pattern)
   return {
     composition: next,
-    report: report(`programmed ${hits} drum hit${hits === 1 ? '' : 's'}`, ['drums'], steps),
+    report: report(`programmed ${hits} drum hit${hits === 1 ? '' : 's'}${sectionSuffix(section)}`, ['drums'], steps),
   }
 }
 
-export function setDrumSteps(c: Composition, voice: unknown, rawSteps: unknown, active: boolean): OpResult {
+export function setDrumSteps(
+  c: Composition,
+  voice: unknown,
+  rawSteps: unknown,
+  active: boolean,
+  rawSection?: unknown,
+): OpResult {
   requirePresent(c, 'drums')
+  const section = assertSection(rawSection)
   const v = assertDrumVoice(voice)
   const steps = assertSteps(rawSteps)
   const next = clone(c)
-  for (const s of steps) next.drums.pattern[v][s] = active
+  const pattern = JSON.parse(JSON.stringify(readDrumSlot(c, section))) as DrumPattern
+  for (const s of steps) pattern[v][s] = active
+  writeDrumSlot(next, section, pattern)
   return {
     composition: next,
     report: report(
-      `${active ? 'set' : 'cleared'} ${VOICE_LABELS[v]} on ${describeSteps(steps)}`,
+      `${active ? 'set' : 'cleared'} ${VOICE_LABELS[v]} on ${describeSteps(steps)}${sectionSuffix(section)}`,
       ['drums'],
       steps,
     ),
   }
 }
 
-export function toggleDrumStep(c: Composition, voice: DrumVoice, step: number): OpResult {
+export function toggleDrumStep(
+  c: Composition,
+  voice: DrumVoice,
+  step: number,
+  section: PatternSection = 'main',
+): OpResult {
   assertStep(step)
   requirePresent(c, 'drums')
   const next = clone(c)
-  const nowActive = !c.drums.pattern[voice][step]
-  next.drums.pattern[voice][step] = nowActive
+  const pattern = JSON.parse(JSON.stringify(readDrumSlot(c, section))) as DrumPattern
+  const nowActive = !pattern[voice][step]
+  pattern[voice][step] = nowActive
+  writeDrumSlot(next, section, pattern)
   return {
     composition: next,
     report: report(
-      `${nowActive ? 'added' : 'removed'} a ${VOICE_LABELS[voice]} hit at step ${step}`,
+      `${nowActive ? 'added' : 'removed'} a ${VOICE_LABELS[voice]} hit at step ${step}${sectionSuffix(section)}`,
       ['drums'],
       [step],
     ),
   }
+}
+
+export function copyDrumSectionFromMain(c: Composition, rawSection: unknown): OpResult {
+  requirePresent(c, 'drums')
+  const section = assertSection(rawSection)
+  if (section === 'main') throw new DuetError('INVALID_INPUT', 'Pick variation or fill to copy into.')
+  const next = clone(c)
+  writeDrumSlot(next, section, JSON.parse(JSON.stringify(c.drums.pattern)) as DrumPattern)
+  return {
+    composition: next,
+    report: report(`copied the main drum bar into the ${section}`, ['drums']),
+  }
+}
+
+export function clearDrumSection(c: Composition, rawSection: unknown): OpResult {
+  requirePresent(c, 'drums')
+  const section = assertSection(rawSection)
+  if (section === 'main') throw new DuetError('INVALID_INPUT', 'Clear removes variation or fill bars, not main.')
+  const next = clone(c)
+  if (section === 'variation') delete next.drums.patternVariation
+  else delete next.drums.patternFill
+  return {
+    composition: next,
+    report: report(`cleared the drum ${section} bar — it falls back to main`, ['drums']),
+  }
+}
+
+/** UI view of a drum section: null when the slot doesn't exist yet. */
+export function viewDrumSection(c: Composition, section: PatternSection): DrumPattern | null {
+  if (section === 'variation') return c.drums.patternVariation ?? null
+  if (section === 'fill') return c.drums.patternFill ?? null
+  return c.drums.pattern
+}
+
+/** UI view of a melodic section: null when the slot doesn't exist yet. */
+export function viewMelodicSection(c: Composition, id: MelodicId, section: PatternSection): Note[] | null {
+  if (section === 'main') return c[id].notes
+  if (id !== 'bass') return null
+  if (section === 'variation') return c.bass.notesVariation ?? null
+  return c.bass.notesFill ?? null
+}
+
+/** True when any variation/fill content exists — playback then runs a 4-bar phrase. */
+export function hasPhrase(c: Composition): boolean {
+  return Boolean(
+    c.drums.patternVariation || c.drums.patternFill || c.bass.notesVariation || c.bass.notesFill,
+  )
+}
+
+/** The drum pattern a given phrase bar plays: main, main, variation, fill. */
+export function drumPatternForBar(c: Composition, bar: number): DrumPattern {
+  if (bar === 2 && c.drums.patternVariation) return c.drums.patternVariation
+  if (bar === 3) return c.drums.patternFill ?? c.drums.patternVariation ?? c.drums.pattern
+  return c.drums.pattern
+}
+
+/** The bass notes a given phrase bar plays: main, main, variation, fill. */
+export function bassNotesForBar(c: Composition, bar: number): Note[] {
+  if (bar === 2 && c.bass.notesVariation) return c.bass.notesVariation
+  if (bar === 3) return c.bass.notesFill ?? c.bass.notesVariation ?? c.bass.notes
+  return c.bass.notes
 }
 
 const VOICE_LABELS: Record<DrumVoice, string> = {
