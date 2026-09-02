@@ -186,19 +186,6 @@ A **dev-only harness** (`window.__duetHarness`, absent from production builds) i
 4. Watch the timeline attribute every move, and the capability panel grow as instruments land.
 5. When you're happy, ask the agent to publish — approve the title in the modal and share the remix link.
 
-## Three-minute judging script
-
-| ⏱ | Beat |
-|---|---|
-| 0:00 | Click **Enable Audio**. Draw a 5–8 note melody on the Lead roll. Press play — just a lonely melody. |
-| 0:20 | Point at the **Musical Contract**: melody locked to you, agent may edit drums/bass/pad/keys/mix, max intensity 90%. Then the capability panel: *the studio tools plus `lead_edit` — nothing else exists yet.* |
-| 0:45 | Give the agent the synthwave prompt. It calls `studio_get_session` and reads the exact unsaved notes — velocities, timing offsets, and the contract's terms. |
-| 1:00 | It adds Drums → the module slides in **and `drums_edit` appears in the panel**. Then Bass, then Pad — each instrument brings its own WebMCP capability. It writes a bar-4 fill and a bass variation: the loop becomes a **4-bar phrase**. |
-| 1:30 | Every edit pulses and lands in the timeline as `AGENT`. Ask it to change one of *your* melody notes — **the tool call pauses and Duet asks you**, showing the exact diff. Decline it. |
-| 1:50 | It calls `studio_enter_performance` — the room transforms, and the panel now shows **only** seven performance tools. It plays, rides the energy (capped by your contract), drops a breakdown. |
-| 2:20 | Return to Compose. Move two melody notes yourself. Ask: *"Adapt the accompaniment to my changes and create a more dramatic ending."* It re-reads the session, patches bass/pad/drums around **your** notes, performs again. |
-| 2:45 | Ask it to publish. **Duet pauses the tool and asks you** to approve the title. Approve → confetti → copy the remix link. *"I played the melody. My agent built the band. What will yours create?"* |
-
 ## Honest limitations
 
 - One 16-step loop per pattern slot, arranged into a 4-bar phrase — this is an instrument for a duet, not a DAW. There is no song-length arrangement yet (see below).
