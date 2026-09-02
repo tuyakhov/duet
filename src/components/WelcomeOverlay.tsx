@@ -15,7 +15,7 @@ export function WelcomeOverlay({ onDone }: { onDone: () => void }) {
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Welcome to Duet">
       <div className="modal welcome-card">
-        <div className="welcome-logo">DUET</div>
+        <div className="welcome-logo">Duet</div>
         <p className="welcome-tag">
           Record a melody, then ask your browser agent to become the rest of your band.
         </p>

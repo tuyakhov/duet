@@ -26,19 +26,13 @@ export function TopBar({ onReset, savedAt }: { onReset: () => void; savedAt: num
   return (
     <header className="topbar">
       <div className="logo" title="Duet">
-        <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden>
-          <defs>
-            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor="#3ee2ff" />
-              <stop offset="1" stopColor="#ff3d81" />
-            </linearGradient>
-          </defs>
-          <rect x="10" y="30" width="7" height="16" rx="3.5" fill="url(#lg)" />
-          <rect x="21" y="20" width="7" height="26" rx="3.5" fill="url(#lg)" />
-          <rect x="32" y="12" width="7" height="34" rx="3.5" fill="url(#lg)" />
-          <rect x="43" y="24" width="7" height="22" rx="3.5" fill="url(#lg)" />
+        <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden>
+          <rect x="10" y="30" width="7" height="16" rx="3.5" fill="#0a84ff" opacity="0.55" />
+          <rect x="21" y="20" width="7" height="26" rx="3.5" fill="#0a84ff" opacity="0.75" />
+          <rect x="32" y="12" width="7" height="34" rx="3.5" fill="#0a84ff" />
+          <rect x="43" y="24" width="7" height="22" rx="3.5" fill="#0a84ff" opacity="0.75" />
         </svg>
-        DUET
+        Duet
       </div>
 
       <input

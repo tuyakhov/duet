@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStudioStore } from '../state/store'
 
-const CONFETTI_COLORS = ['#3ee2ff', '#ff3d81', '#ffb02e', '#a06bff', '#5ff2b6', '#f6f5ff']
+const CONFETTI_COLORS = ['#64d2ff', '#ff375f', '#ff9f0a', '#bf5af2', '#30d158', '#ffffff']
 
 export function Celebration() {
   const celebration = useStudioStore((s) => s.celebration)
