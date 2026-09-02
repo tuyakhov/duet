@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityTimeline } from './components/ActivityTimeline'
 import { CapabilityPanel } from './components/CapabilityPanel'
 import { Celebration } from './components/Celebration'
@@ -15,8 +15,8 @@ import { audioEngine } from './audio/engine'
 import { DuetError } from './engine/errors'
 import { decodeShare, sharePayloadFromHash } from './engine/share'
 import type { Composition } from './engine/types'
-import { onToast } from './state/actions'
-import { clearStorage, loadFromStorage, saveToStorage, useStudioStore } from './state/store'
+import { humanActions, onToast } from './state/actions'
+import { clearStorage, hydrateFromStorage, saveToStorage, useStudioStore } from './state/store'
 
 type BootState =
   | { kind: 'studio' }
@@ -38,31 +38,22 @@ function boot(): BootState {
   return { kind: 'studio' }
 }
 
-function hydrateFromStorage() {
-  const saved = loadFromStorage()
-  if (!saved) return
-  useStudioStore.setState({ sessionId: saved.sessionId, composition: saved.composition })
-  useStudioStore.getState().logActivity('system', 'restored your session from autosave')
-}
-
-let hydrated = false
-
 export default function App() {
-  const [bootState] = useState<BootState>(() => {
-    const b = boot()
-    if (b.kind === 'studio' && !hydrated) {
-      hydrated = true
-      hydrateFromStorage()
-    }
-    if (b.kind === 'share' && !hydrated) {
-      hydrated = true
-      useStudioStore.getState().loadComposition(b.composition, 'system', 'opened a shared duet')
-    }
-    return b
-  })
+  // boot() is pure (decode only) — store mutations happen in the mount
+  // effect below, never during render.
+  const [bootState] = useState<BootState>(boot)
   const [view, setView] = useState<'studio' | 'share' | 'shareError'>(
     bootState.kind === 'studio' ? 'studio' : bootState.kind,
   )
+
+  const bootApplied = useRef(false)
+  useEffect(() => {
+    if (bootApplied.current) return
+    bootApplied.current = true
+    if (bootState.kind === 'share') {
+      useStudioStore.getState().loadComposition(bootState.composition, 'system', 'opened a shared duet')
+    }
+  }, [bootState])
 
   const mode = useStudioStore((s) => s.mode)
   const audioEnabled = useStudioStore((s) => s.audioEnabled)
@@ -86,13 +77,35 @@ export default function App() {
   }, [])
 
   // Autosave the authored session — but never while previewing a shared link.
+  // The composition object is replaced immutably on real edits, so reference
+  // equality keeps this from firing on playhead ticks and other noise.
+  const [savedAt, setSavedAt] = useState<number | null>(null)
   useEffect(() => {
     if (view !== 'studio') return
     return useStudioStore.subscribe(
       (s) => ({ sessionId: s.sessionId, composition: s.composition }),
-      (snapshot) => saveToStorage(snapshot),
+      (snapshot) => {
+        saveToStorage(snapshot)
+        setSavedAt(Date.now())
+      },
+      {
+        equalityFn: (a, b) => a.sessionId === b.sessionId && a.composition === b.composition,
+      },
     )
   }, [view])
+
+  // Space bar toggles playback (unless the human is typing somewhere).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      const target = e.target as HTMLElement | null
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName)) return
+      e.preventDefault()
+      humanActions.togglePlay()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // The whole room changes with the mode.
   useEffect(() => {
@@ -129,7 +142,7 @@ export default function App() {
 
   return (
     <div className="shell">
-      <TopBar onReset={() => setConfirmingReset(true)} />
+      <TopBar onReset={() => setConfirmingReset(true)} savedAt={savedAt} />
       <div className="studio">
         <main className="studio-main">
           {mode === 'compose' ? (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { midiToPitch, parsePitch, prefersFlats, scaleMidiSet } from '../engine/music'
 import { LOOP_LENGTH } from '../engine/types'
 import { humanActions } from '../state/actions'
@@ -19,13 +19,28 @@ interface Draft {
  * octave range, plus any out-of-scale pitches that already hold notes (so
  * chromatic agent writing stays visible).
  */
-export function PianoRoll({ id, lowOctave, highOctave }: { id: 'lead' | 'bass'; lowOctave: number; highOctave: number }) {
+export function PianoRoll({
+  id,
+  lowOctave,
+  highOctave,
+}: {
+  id: 'lead' | 'keys' | 'bass'
+  lowOctave: number
+  highOctave: number
+}) {
   const notes = useStudioStore((s) => s.composition[id].notes)
   const musicalKey = useStudioStore((s) => s.composition.key)
   const scale = useStudioStore((s) => s.composition.scale)
   const playStep = useStudioStore((s) => s.playback.step)
   const mode = useStudioStore((s) => s.mode)
-  const [draft, setDraft] = useState<Draft | null>(null)
+  // The draft lives in a ref as well as state: the ref is set synchronously on
+  // mousedown, so a mouseup arriving in the same frame still commits correctly.
+  const draftRef = useRef<Draft | null>(null)
+  const [draft, setDraftState] = useState<Draft | null>(null)
+  const setDraft = (d: Draft | null) => {
+    draftRef.current = d
+    setDraftState(d)
+  }
 
   const editable = mode === 'compose'
   const flats = prefersFlats(musicalKey, scale)
@@ -46,15 +61,17 @@ export function PianoRoll({ id, lowOctave, highOctave }: { id: 'lead' | 'bass'; 
   const rowIndex = useMemo(() => new Map(rows.map((m, i) => [m, i])), [rows])
 
   useEffect(() => {
-    if (!draft) return
     const commit = () => {
-      humanActions.drawNote(id, draft.step, draft.pitch, draft.duration)
-      useStudioStore.getState().setSelection(id, [draft.step])
-      setDraft(null)
+      const d = draftRef.current
+      if (!d) return
+      draftRef.current = null
+      setDraftState(null)
+      humanActions.drawNote(id, d.step, d.pitch, d.duration)
+      useStudioStore.getState().setSelection(id, [d.step])
     }
     window.addEventListener('mouseup', commit)
     return () => window.removeEventListener('mouseup', commit)
-  }, [draft, id])
+  }, [id])
 
   const rootPc = useMemo(() => {
     const m = parsePitch(`${musicalKey}4`)
@@ -84,8 +101,9 @@ export function PianoRoll({ id, lowOctave, highOctave }: { id: 'lead' | 'bass'; 
                   setDraft({ step, pitch, duration: 1 })
                 }}
                 onMouseEnter={() => {
-                  if (draft && draft.pitch === pitch && step >= draft.step) {
-                    setDraft({ ...draft, duration: Math.min(step - draft.step + 1, LOOP_LENGTH - draft.step) })
+                  const d = draftRef.current
+                  if (d && d.pitch === pitch && step >= d.step) {
+                    setDraft({ ...d, duration: Math.min(step - d.step + 1, LOOP_LENGTH - d.step) })
                   }
                 }}
               />
@@ -127,6 +145,10 @@ export function PianoRoll({ id, lowOctave, highOctave }: { id: 'lead' | 'bass'; 
             height: ROW_H - 2,
           }}
         />
+      )}
+
+      {notes.length === 0 && !draft && editable && (
+        <div className="roll-hint">click a cell to draw a note · drag right to stretch it</div>
       )}
 
       {playStep >= 0 && (

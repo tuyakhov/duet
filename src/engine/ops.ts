@@ -13,8 +13,10 @@ import {
   assertKey,
   assertPreset,
   assertScale,
+  assertSpace,
   assertStep,
   assertSteps,
+  assertSwing,
   assertTempo,
   assertVolume,
   validateChord,
@@ -23,6 +25,7 @@ import {
   validateNotes,
 } from './validate'
 import { emptyDrumPattern } from './session'
+import { midiToPitch, parsePitch, prefersFlats, MAX_MIDI, MIN_MIDI } from './music'
 import { INSTRUMENT_LABELS, LOOP_LENGTH } from './types'
 import type {
   Chord,
@@ -77,17 +80,90 @@ export function setTempo(c: Composition, tempo: unknown): OpResult {
   return { composition: next, report: report(`set tempo to ${bpm} BPM`, ['session']) }
 }
 
-export function setKeyScale(c: Composition, key?: unknown, scale?: unknown): OpResult {
+/**
+ * Change key and/or scale. When the key root changes and `transpose` is true
+ * (the default), every existing note and chord is shifted by the shortest
+ * semitone path to the new root, so a key change is immediately audible.
+ */
+export function setKeyScale(
+  c: Composition,
+  key?: unknown,
+  scale?: unknown,
+  transpose = true,
+): OpResult {
   if (key === undefined && scale === undefined) {
     throw new DuetError('INVALID_INPUT', 'Provide a key, a scale, or both.')
   }
   const next = clone(c)
   if (key !== undefined) next.key = assertKey(key)
   if (scale !== undefined) next.scale = assertScale(scale)
+
+  const oldRoot = parsePitch(`${c.key}4`)
+  const newRoot = parsePitch(`${next.key}4`)
+  let delta = oldRoot !== null && newRoot !== null ? (((newRoot - oldRoot) % 12) + 12) % 12 : 0
+  if (delta > 6) delta -= 12
+
+  if (!transpose || delta === 0) {
+    return {
+      composition: next,
+      report: report(`set key to ${next.key} ${next.scale}`, ['session']),
+    }
+  }
+
+  const flats = prefersFlats(next.key, next.scale)
+  let skipped = 0
+  const shift = (pitch: string): string => {
+    const midi = parsePitch(pitch)
+    if (midi === null) return pitch
+    let moved = midi + delta
+    if (moved < MIN_MIDI) moved += 12
+    if (moved > MAX_MIDI) moved -= 12
+    if (moved < MIN_MIDI || moved > MAX_MIDI) {
+      skipped++
+      return pitch
+    }
+    return midiToPitch(moved, flats)
+  }
+  const changed: InstrumentId[] = []
+  for (const id of ['lead', 'keys', 'bass'] as const) {
+    if (next[id].notes.length > 0) {
+      next[id].notes = next[id].notes.map((n) => ({ ...n, pitch: shift(n.pitch) }))
+      changed.push(id)
+    }
+  }
+  if (next.pad.chords.length > 0) {
+    next.pad.chords = next.pad.chords.map((ch) => ({ ...ch, pitches: ch.pitches.map(shift) }))
+    changed.push('pad')
+  }
+  const warnings =
+    skipped > 0 ? [`${skipped} note(s) were at the edge of the pitch range and were left in place.`] : []
   return {
     composition: next,
-    report: report(`set key to ${next.key} ${next.scale}`, ['session']),
+    report: {
+      summary: `changed key to ${next.key} ${next.scale} (transposed ${delta > 0 ? '+' : ''}${delta} semitones)`,
+      changedTracks: changed.length > 0 ? changed : ['session'],
+      changedSteps: [],
+      warnings,
+    },
   }
+}
+
+/** Groove settings: swing (off-beat delay) and space (global reverb send). */
+export function setGroove(c: Composition, changes: { swing?: unknown; space?: unknown }): OpResult {
+  if (changes.swing === undefined && changes.space === undefined) {
+    throw new DuetError('INVALID_INPUT', 'Provide swing, space, or both.')
+  }
+  const next = clone(c)
+  const parts: string[] = []
+  if (changes.swing !== undefined) {
+    next.swing = assertSwing(changes.swing)
+    parts.push(`swing ${Math.round(next.swing * 100)}%`)
+  }
+  if (changes.space !== undefined) {
+    next.space = assertSpace(changes.space)
+    parts.push(`space ${Math.round(next.space * 100)}%`)
+  }
+  return { composition: next, report: report(`set ${parts.join(', ')}`, ['session']) }
 }
 
 export function addInstrument(c: Composition, id: unknown): OpResult {
@@ -122,6 +198,7 @@ export function removeInstrument(c: Composition, id: unknown): OpResult {
   // Clear its content so a re-add starts fresh.
   if (instrument === 'drums') next.drums.pattern = emptyDrumPattern()
   if (instrument === 'bass') next.bass.notes = []
+  if (instrument === 'keys') next.keys.notes = []
   if (instrument === 'pad') next.pad.chords = []
   return {
     composition: next,
@@ -182,11 +259,11 @@ function requirePresent(c: Composition, instrument: InstrumentId) {
 
 // ------------------------------------------------------------ melodic tracks
 
-type MelodicId = 'lead' | 'bass'
+type MelodicId = 'lead' | 'keys' | 'bass'
 
 function assertMelodic(id: unknown): MelodicId {
   const instrument = assertInstrumentId(id)
-  if (instrument !== 'lead' && instrument !== 'bass') {
+  if (instrument !== 'lead' && instrument !== 'bass' && instrument !== 'keys') {
     throw new DuetError('INVALID_INPUT', `${instrument} does not hold melodic notes.`)
   }
   return instrument

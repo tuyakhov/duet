@@ -34,27 +34,32 @@ export function humanApply(fn: (c: Composition) => OpResult): boolean {
   }
 }
 
+type MelodicId = 'lead' | 'keys' | 'bass'
+
 export const humanActions = {
   setTitle: (title: string) => humanApply((c) => ops.setTitle(c, title)),
   setTempo: (bpm: number) => humanApply((c) => ops.setTempo(c, bpm)),
-  setKey: (key: string) => humanApply((c) => ops.setKeyScale(c, key, undefined)),
+  /** Key changes transpose existing material — what a musician expects. */
+  setKey: (key: string) => humanApply((c) => ops.setKeyScale(c, key, undefined, true)),
   setScale: (scale: string) => humanApply((c) => ops.setKeyScale(c, undefined, scale)),
+  setSwing: (swing: number) => humanApply((c) => ops.setGroove(c, { swing })),
+  setSpace: (space: number) => humanApply((c) => ops.setGroove(c, { space })),
   addInstrument: (id: InstrumentId) => humanApply((c) => ops.addInstrument(c, id)),
   removeInstrument: (id: InstrumentId) => humanApply((c) => ops.removeInstrument(c, id)),
   setVolume: (id: InstrumentId, volume: number) => humanApply((c) => ops.setMixer(c, id, { volume })),
   toggleMute: (id: InstrumentId) =>
     humanApply((c) => ops.setMixer(c, id, { muted: !c[id].mixer.muted })),
   setPreset: (id: InstrumentId, preset: string) => humanApply((c) => ops.setPreset(c, id, preset)),
-  toggleNote: (id: 'lead' | 'bass', step: number, pitch: string) =>
+  toggleNote: (id: MelodicId, step: number, pitch: string) =>
     humanApply((c) => ops.toggleNoteCell(c, id, step, pitch)),
-  drawNote: (id: 'lead' | 'bass', step: number, pitch: string, duration: number) =>
+  drawNote: (id: MelodicId, step: number, pitch: string, duration: number) =>
     humanApply((c) => {
       const withoutOld = c[id].notes.some((n) => n.step === step && n.pitch === pitch)
         ? ops.toggleNoteCell(c, id, step, pitch).composition
         : c
       return ops.addNotes(withoutOld, id, [{ step, pitch, duration, velocity: 0.85 }])
     }),
-  removeNote: (id: 'lead' | 'bass', step: number, pitch: string) =>
+  removeNote: (id: MelodicId, step: number, pitch: string) =>
     humanApply((c) => ops.toggleNoteCell(c, id, step, pitch)),
   toggleDrum: (voice: DrumVoice, step: number) => humanApply((c) => ops.toggleDrumStep(c, voice, step)),
   addChord: (step: number, duration: number, pitches: string[]) =>

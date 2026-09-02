@@ -10,6 +10,7 @@ import { useStudioStore } from '../state/store'
 import {
   BASS_SYNTH_PRESETS,
   DRUM_KIT_PRESETS,
+  KEYS_SYNTH_PRESETS,
   LEAD_SYNTH_PRESETS,
   PAD_SYNTH_PRESETS,
 } from './presets'
@@ -21,6 +22,7 @@ class AudioEngine {
   private built = false
 
   private leadSynth!: Tone.PolySynth<Tone.Synth>
+  private keysSynth!: Tone.PolySynth<Tone.Synth>
   private bassSynth!: Tone.MonoSynth
   private padSynth!: Tone.PolySynth<Tone.Synth>
   private kick!: Tone.MembraneSynth
@@ -32,6 +34,8 @@ class AudioEngine {
   private bassFilter!: Tone.Filter
   private channels!: Record<InstrumentId, Tone.Channel>
   private meters!: Record<InstrumentId, Tone.Meter>
+  private reverb!: Tone.Reverb
+  private reverbSend!: Tone.Gain
   private sequence!: Tone.Sequence<number>
   private unsubscribers: Array<() => void> = []
 
@@ -55,25 +59,37 @@ class AudioEngine {
 
     const limiter = new Tone.Limiter(-1).toDestination()
 
+    // Global "space": a parallel reverb bus fed by the melodic/harmonic channels.
+    this.reverb = new Tone.Reverb({ decay: 2.6, preDelay: 0.02, wet: 1 }).connect(limiter)
+    this.reverbSend = new Tone.Gain(0).connect(this.reverb)
+
     this.channels = {
       lead: new Tone.Channel(0, 0).connect(limiter),
+      keys: new Tone.Channel(0, 0).connect(limiter),
       bass: new Tone.Channel(0, 0).connect(limiter),
       pad: new Tone.Channel(0, 0).connect(limiter),
       drums: new Tone.Channel(0, 0).connect(limiter),
     }
     this.meters = {
       lead: new Tone.Meter({ normalRange: true, smoothing: 0.85 }),
+      keys: new Tone.Meter({ normalRange: true, smoothing: 0.85 }),
       bass: new Tone.Meter({ normalRange: true, smoothing: 0.85 }),
       pad: new Tone.Meter({ normalRange: true, smoothing: 0.85 }),
       drums: new Tone.Meter({ normalRange: true, smoothing: 0.85 }),
     }
-    for (const id of ['lead', 'bass', 'pad', 'drums'] as InstrumentId[]) {
+    for (const id of ['lead', 'keys', 'bass', 'pad', 'drums'] as InstrumentId[]) {
       this.channels[id].connect(this.meters[id])
+    }
+    for (const id of ['lead', 'keys', 'pad'] as InstrumentId[]) {
+      this.channels[id].connect(this.reverbSend)
     }
 
     this.leadFilter = new Tone.Filter(6000, 'lowpass').connect(this.channels.lead)
     this.leadSynth = new Tone.PolySynth(Tone.Synth, LEAD_SYNTH_PRESETS.neon).connect(this.leadFilter)
     this.leadSynth.maxPolyphony = 16
+
+    this.keysSynth = new Tone.PolySynth(Tone.Synth, KEYS_SYNTH_PRESETS.tines).connect(this.channels.keys)
+    this.keysSynth.maxPolyphony = 16
 
     this.bassFilter = new Tone.Filter(2500, 'lowpass').connect(this.channels.bass)
     this.bassSynth = new Tone.MonoSynth(BASS_SYNTH_PRESETS.warm).connect(this.bassFilter)
@@ -115,17 +131,26 @@ class AudioEngine {
   }
 
   /** Schedule everything that starts on `step`, reading the live session. */
-  private tick(time: number, step: number) {
+  private tick(rawTime: number, step: number) {
     const state = useStudioStore.getState()
     const c = state.composition
     const energy = state.energy
     const inBreakdown = Date.now() < state.breakdownUntil
     const stepSec = Tone.Time('16n').toSeconds()
+    // Swing: every off-beat 16th lands late by up to 60% of a step.
+    const time = step % 2 === 1 ? rawTime + (c.swing ?? 0) * stepSec : rawTime
 
     if (c.instruments.includes('lead') && !c.lead.mixer.muted) {
       for (const note of c.lead.notes) {
         if (note.step !== step) continue
         this.leadSynth.triggerAttackRelease(note.pitch, note.duration * stepSec * 0.95, time, note.velocity)
+      }
+    }
+
+    if (c.instruments.includes('keys') && !c.keys.mixer.muted) {
+      for (const note of c.keys.notes) {
+        if (note.step !== step) continue
+        this.keysSynth.triggerAttackRelease(note.pitch, note.duration * stepSec * 0.95, time, note.velocity)
       }
     }
 
@@ -176,12 +201,17 @@ class AudioEngine {
     this.applyMixer()
     this.applyPresets()
     this.applyEnergy(state.energy)
+    this.applySpace(c.space ?? 0)
+  }
+
+  private applySpace(space: number) {
+    this.reverbSend.gain.rampTo(space * 0.7, 0.3)
   }
 
   private applyMixer() {
     const c = useStudioStore.getState().composition
     const energy = useStudioStore.getState().energy
-    for (const id of ['lead', 'bass', 'drums'] as InstrumentId[]) {
+    for (const id of ['lead', 'keys', 'bass', 'drums'] as InstrumentId[]) {
       this.channels[id].volume.value = Tone.gainToDb(c[id].mixer.volume)
       this.channels[id].mute = c[id].mixer.muted
     }
@@ -194,6 +224,7 @@ class AudioEngine {
   private applyPresets() {
     const c = useStudioStore.getState().composition
     this.leadSynth.set(LEAD_SYNTH_PRESETS[c.lead.preset] ?? LEAD_SYNTH_PRESETS.neon)
+    this.keysSynth.set(KEYS_SYNTH_PRESETS[c.keys.preset] ?? KEYS_SYNTH_PRESETS.tines)
     this.bassSynth.set(BASS_SYNTH_PRESETS[c.bass.preset] ?? BASS_SYNTH_PRESETS.warm)
     this.padSynth.set(PAD_SYNTH_PRESETS[c.pad.preset] ?? PAD_SYNTH_PRESETS.haze)
     const kit = DRUM_KIT_PRESETS[c.drums.preset] ?? DRUM_KIT_PRESETS.analog
@@ -222,6 +253,7 @@ class AudioEngine {
       store.subscribe(
         (s) => [
           s.composition.lead.mixer,
+          s.composition.keys.mixer,
           s.composition.bass.mixer,
           s.composition.pad.mixer,
           s.composition.drums.mixer,
@@ -230,13 +262,23 @@ class AudioEngine {
         { equalityFn: shallowJson },
       ),
       store.subscribe(
-        (s) => [s.composition.lead.preset, s.composition.bass.preset, s.composition.pad.preset, s.composition.drums.preset],
+        (s) => [
+          s.composition.lead.preset,
+          s.composition.keys.preset,
+          s.composition.bass.preset,
+          s.composition.pad.preset,
+          s.composition.drums.preset,
+        ],
         () => this.applyPresets(),
         { equalityFn: shallowJson },
       ),
       store.subscribe(
         (s) => s.energy,
         (energy) => this.applyEnergy(energy),
+      ),
+      store.subscribe(
+        (s) => s.composition.space,
+        (space) => this.applySpace(space ?? 0),
       ),
     )
   }
@@ -263,6 +305,7 @@ class AudioEngine {
     transport.stop()
     transport.position = 0
     this.leadSynth.releaseAll()
+    this.keysSynth.releaseAll()
     this.padSynth.releaseAll()
     useStudioStore.getState().setPlayback(false, actor)
     useStudioStore.getState().setPlayheadStep(-1)
@@ -274,13 +317,14 @@ class AudioEngine {
 
   /** 0..1 output level per track, for the performance meters. */
   getLevels(): Record<InstrumentId, number> {
-    if (!this.built) return { lead: 0, bass: 0, pad: 0, drums: 0 }
+    if (!this.built) return { lead: 0, keys: 0, bass: 0, pad: 0, drums: 0 }
     const read = (m: Tone.Meter) => {
       const v = m.getValue()
       return typeof v === 'number' ? Math.min(1, v * 3) : 0
     }
     return {
       lead: read(this.meters.lead),
+      keys: read(this.meters.keys),
       bass: read(this.meters.bass),
       pad: read(this.meters.pad),
       drums: read(this.meters.drums),
@@ -296,9 +340,9 @@ class AudioEngine {
     Tone.getTransport().cancel()
     this.sequence.dispose()
     for (const node of [
-      this.leadSynth, this.bassSynth, this.padSynth,
+      this.leadSynth, this.keysSynth, this.bassSynth, this.padSynth,
       this.kick, this.snare, this.hatClosed, this.hatOpen,
-      this.leadFilter, this.bassFilter,
+      this.leadFilter, this.bassFilter, this.reverb, this.reverbSend,
       ...Object.values(this.channels), ...Object.values(this.meters),
     ]) {
       node.dispose()

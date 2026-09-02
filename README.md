@@ -64,8 +64,8 @@ WebMCP handlers, human UI actions, and tests all call the same engine ops. The R
 One serializable session (see `src/engine/types.ts`):
 
 - `sessionId`, `version` (bumps on every human/agent mutation), `mode` (`compose` | `performance`)
-- `composition`: `title`, `tempo` (60–200 BPM), `key` (12 pitch classes), `scale` (8 scales), `loopLength: 16`, `instruments` (rack order), and four tracks:
-  - **Lead / Bass** — notes: `{ step: 0–15, pitch: "C4"|"Eb3"|…, duration: steps, velocity: 0–1 }`
+- `composition`: `title`, `tempo` (60–200 BPM), `key` (12 pitch classes), `scale` (8 scales), `loopLength: 16`, `instruments` (rack order), `swing` (0–0.6), `space` (reverb 0–1), and five tracks:
+  - **Lead / Keys / Bass** — notes: `{ step: 0–15, pitch: "C4"|"Eb3"|…, duration: steps, velocity: 0–1 }`
   - **Drums** — four boolean[16] lanes: `kick`, `snare`, `hatClosed`, `hatOpen`
   - **Pad** — chords: `{ step, duration, pitches: ["C3","Eb3","G3"], velocity }`
   - each with `preset` and `mixer { volume, muted }`
@@ -84,7 +84,8 @@ Sharing serializes only the composition (never history or playback) into `#s=<ba
 | `studio_add_instrument` | Add `drums` / `bass` / `pad` — its edit tool appears |
 | `studio_remove_instrument` | Remove one — its edit tool disappears (lead is protected) |
 | `studio_set_tempo` | 60–200 BPM, live even during playback |
-| `studio_set_key` | Key and/or scale |
+| `studio_set_key` | Key and/or scale — key changes transpose all existing material by default (`transposeExisting: false` to relabel only) |
+| `studio_set_groove` | Swing (off-beat 16th delay, 0–0.6) and space (global reverb send, 0–1) |
 | `studio_enter_performance` | Swap the entire toolset for performance tools |
 | `studio_publish` | **Pauses for in-page human approval**, then returns the remix link |
 
@@ -93,9 +94,14 @@ Sharing serializes only the composition (never history or playback) into `#s=<ba
 | Tool | Operations (one enum per schema) |
 |---|---|
 | `lead_edit` | `replace_notes`, `add_notes`, `patch_steps`, `remove_steps`, `set_preset`, `set_mix` |
+| `keys_edit` | same operations as `lead_edit` (electric-piano track) |
 | `bass_edit` | same operations as `lead_edit` |
 | `drums_edit` | `replace_pattern`, `set_steps`, `clear_steps`, `set_kit`, `set_mix` |
 | `pad_edit` | `replace_chords`, `add_chord`, `remove_chord`, `set_preset`, `set_mix` |
+
+Presets: lead `neon · glass · saw · laser · chip · velvet · brass`, keys `tines · bell · organ`,
+bass `warm · growl · sub · rubber · buzz`, pad `haze · strings · choir · shimmer · dark`,
+drum kits `analog · punch · boom`.
 
 **Performance mode (the only tools registered in performance):**
 

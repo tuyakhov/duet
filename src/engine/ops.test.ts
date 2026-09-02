@@ -187,6 +187,46 @@ describe('session-level edits', () => {
     expect(() => ops.setKeyScale(c, undefined, 'blues')).toThrow(DuetError)
   })
 
+  it('changing key transposes notes and chords by the shortest path', () => {
+    let c = createComposition()
+    c = ops.replaceNotes(c, 'lead', [{ step: 0, pitch: 'C4', duration: 1, velocity: 0.8 }]).composition
+    c = ops.addInstrument(c, 'pad').composition
+    c = ops.addChord(c, { step: 0, duration: 4, pitches: ['C3', 'Eb3', 'G3'], velocity: 0.5 }).composition
+
+    const up = ops.setKeyScale(c, 'D', undefined) // +2 semitones
+    expect(up.composition.lead.notes[0].pitch).toBe('D4')
+    expect(up.composition.pad.chords[0].pitches).toEqual(['D3', 'F3', 'A3'])
+    expect(up.report.summary).toContain('+2 semitones')
+
+    const down = ops.setKeyScale(c, 'A', undefined) // shortest path is -3, not +9
+    expect(down.composition.lead.notes[0].pitch).toBe('A3')
+  })
+
+  it('key changes can skip transposition, and scale changes never transpose', () => {
+    let c = createComposition()
+    c = ops.replaceNotes(c, 'lead', [{ step: 0, pitch: 'C4', duration: 1, velocity: 0.8 }]).composition
+    expect(ops.setKeyScale(c, 'D', undefined, false).composition.lead.notes[0].pitch).toBe('C4')
+    expect(ops.setKeyScale(c, undefined, 'dorian').composition.lead.notes[0].pitch).toBe('C4')
+  })
+
+  it('validates groove settings', () => {
+    const c = createComposition()
+    const { composition } = ops.setGroove(c, { swing: 0.3, space: 0.5 })
+    expect(composition.swing).toBe(0.3)
+    expect(composition.space).toBe(0.5)
+    expect(() => ops.setGroove(c, { swing: 0.9 })).toThrow(DuetError)
+    expect(() => ops.setGroove(c, { space: 2 })).toThrow(DuetError)
+    expect(() => ops.setGroove(c, {})).toThrow(DuetError)
+  })
+
+  it('keys is a melodic instrument like lead and bass', () => {
+    let c = ops.addInstrument(createComposition(), 'keys').composition
+    c = ops.addNotes(c, 'keys', [{ step: 0, pitch: 'C3', duration: 2, velocity: 0.7 }]).composition
+    expect(c.keys.notes).toHaveLength(1)
+    const removed = ops.removeInstrument(c, 'keys')
+    expect(removed.composition.keys.notes).toEqual([])
+  })
+
   it('validates mixer input', () => {
     const c = createComposition()
     const { composition } = ops.setMixer(c, 'lead', { volume: 0.5, muted: true })

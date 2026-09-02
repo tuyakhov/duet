@@ -80,7 +80,35 @@ describe('dynamic compose toolset', () => {
     expect(computeToolNames(store())).toEqual(computeTools().map((t) => t.name))
     await call('studio_add_instrument', { instrument: 'bass' })
     await call('studio_add_instrument', { instrument: 'pad' })
+    await call('studio_add_instrument', { instrument: 'keys' })
     expect(computeToolNames(store())).toEqual(computeTools().map((t) => t.name))
+  })
+
+  it('keys brings keys_edit, which edits notes like any melodic track', async () => {
+    const res = await call('studio_add_instrument', { instrument: 'keys' })
+    expect(res.newToolAvailable).toBe('keys_edit')
+    await call('keys_edit', { op: 'add_notes', notes: [{ step: 0, pitch: 'C3', duration: 2 }] })
+    expect(store().composition.keys.notes).toHaveLength(1)
+    await call('keys_edit', { op: 'set_preset', preset: 'organ' })
+    expect(store().composition.keys.preset).toBe('organ')
+    await call('studio_remove_instrument', { instrument: 'keys' })
+    expect(computeTools().map((t) => t.name)).not.toContain('keys_edit')
+  })
+
+  it('studio_set_key transposes by default and can be told not to', async () => {
+    await call('lead_edit', { op: 'add_notes', notes: [{ step: 0, pitch: 'C4' }] })
+    await call('studio_set_key', { key: 'D' })
+    expect(store().composition.lead.notes[0].pitch).toBe('D4')
+    await call('studio_set_key', { key: 'E', transposeExisting: false })
+    expect(store().composition.lead.notes[0].pitch).toBe('D4')
+  })
+
+  it('studio_set_groove sets swing and space with validation', async () => {
+    await call('studio_set_groove', { swing: 0.3, space: 0.6 })
+    expect(store().composition.swing).toBe(0.3)
+    expect(store().composition.space).toBe(0.6)
+    const err = await callExpectingError('studio_set_groove', { swing: 0.9 })
+    expect(err.code).toBe('INVALID_INPUT')
   })
 })
 
@@ -134,7 +162,7 @@ describe('studio_get_session', () => {
     expect(session.tempo).toBe(104)
     expect(session.key).toBe('C')
     expect(session.instrumentsPresent).toEqual(['lead'])
-    expect(session.instrumentsAvailableToAdd).toEqual(['drums', 'bass', 'pad'])
+    expect(session.instrumentsAvailableToAdd).toEqual(['keys', 'drums', 'bass', 'pad'])
     expect(session.tracks.drums).toBeNull()
     expect(res.sessionVersion).toBe(store().version)
   })

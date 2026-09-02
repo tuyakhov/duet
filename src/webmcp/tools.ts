@@ -11,7 +11,9 @@ import {
   DRUM_PRESETS,
   INSTRUMENT_LABELS,
   KEYS,
+  KEYS_PRESETS,
   LEAD_PRESETS,
+  MAX_SWING,
   MAX_TEMPO,
   MIN_TEMPO,
   PAD_PRESETS,
@@ -85,13 +87,18 @@ export function buildSessionSnapshot(s: StudioState) {
     playbackState: s.playback.playing ? 'playing' : 'stopped',
     audioEnabled: s.audioEnabled,
     energy: s.energy,
+    swing: c.swing,
+    space: c.space,
     instrumentsPresent: c.instruments,
-    instrumentsAvailableToAdd: (['drums', 'bass', 'pad'] as InstrumentId[]).filter(
+    instrumentsAvailableToAdd: (['keys', 'drums', 'bass', 'pad'] as InstrumentId[]).filter(
       (i) => !c.instruments.includes(i),
     ),
     tracks: {
       lead: c.instruments.includes('lead')
         ? { notes: c.lead.notes, preset: c.lead.preset, mixer: c.lead.mixer }
+        : null,
+      keys: c.instruments.includes('keys')
+        ? { notes: c.keys.notes, preset: c.keys.preset, mixer: c.keys.mixer }
         : null,
       bass: c.instruments.includes('bass')
         ? { notes: c.bass.notes, preset: c.bass.preset, mixer: c.bass.mixer }
@@ -158,18 +165,20 @@ export function baseComposeTools(deps: ToolDeps = defaultDeps): ToolDef[] {
             mixer: c[id].mixer,
             editTool: `${id}_edit`,
           })),
-          availableToAdd: (['drums', 'bass', 'pad'] as InstrumentId[]).filter((i) => !c.instruments.includes(i)),
+          availableToAdd: (['keys', 'drums', 'bass', 'pad'] as InstrumentId[]).filter(
+            (i) => !c.instruments.includes(i),
+          ),
         })
       },
     },
     {
       name: 'studio_add_instrument',
       description:
-        'Add an instrument module (drums, bass, or pad) to the studio rack. The module appears visually for the human, and its dedicated editing tool (drums_edit / bass_edit / pad_edit) becomes available to you immediately after.',
+        'Add an instrument module (keys, drums, bass, or pad) to the studio rack. The module appears visually for the human, and its dedicated editing tool (keys_edit / drums_edit / bass_edit / pad_edit) becomes available to you immediately after.',
       inputSchema: {
         type: 'object',
         properties: {
-          instrument: { type: 'string', enum: ['drums', 'bass', 'pad'], description: 'Instrument to add.' },
+          instrument: { type: 'string', enum: ['keys', 'drums', 'bass', 'pad'], description: 'Instrument to add.' },
         },
         required: ['instrument'],
       },
@@ -184,11 +193,11 @@ export function baseComposeTools(deps: ToolDeps = defaultDeps): ToolDef[] {
     {
       name: 'studio_remove_instrument',
       description:
-        'Remove an instrument module (drums, bass, or pad) from the rack. Its content is cleared and its editing tool disappears. The lead synth carries the human melody and cannot be removed.',
+        'Remove an instrument module (keys, drums, bass, or pad) from the rack. Its content is cleared and its editing tool disappears. The lead synth carries the human melody and cannot be removed.',
       inputSchema: {
         type: 'object',
         properties: {
-          instrument: { type: 'string', enum: ['drums', 'bass', 'pad'] },
+          instrument: { type: 'string', enum: ['keys', 'drums', 'bass', 'pad'] },
         },
         required: ['instrument'],
       },
@@ -215,17 +224,39 @@ export function baseComposeTools(deps: ToolDeps = defaultDeps): ToolDef[] {
     {
       name: 'studio_set_key',
       description:
-        'Set the musical key and/or scale of the session. This changes which pitches the piano roll highlights — existing notes are not transposed.',
+        'Set the musical key and/or scale. By default a key change transposes all existing notes and chords by the shortest path to the new root, so the change is immediately audible. Set transposeExisting to false to relabel the key without moving any notes. Scale changes never move notes.',
       inputSchema: {
         type: 'object',
         properties: {
           key: { type: 'string', enum: [...KEYS], description: 'Root pitch class.' },
           scale: { type: 'string', enum: [...SCALE_NAMES] },
+          transposeExisting: {
+            type: 'boolean',
+            description: 'Transpose existing notes/chords to the new key (default true).',
+          },
         },
       },
       execute: (args) => {
         requireMode(deps, 'compose', 'studio_set_key')
-        const report = state(deps).apply('agent', (c) => ops.setKeyScale(c, args.key, args.scale))
+        const transpose = args.transposeExisting === undefined ? true : args.transposeExisting === true
+        const report = state(deps).apply('agent', (c) => ops.setKeyScale(c, args.key, args.scale, transpose))
+        return mutationResponse(deps, report)
+      },
+    },
+    {
+      name: 'studio_set_groove',
+      description:
+        `Set global groove settings: swing (0-${MAX_SWING}, delays every off-beat 16th — 0 is straight, 0.3 is a solid shuffle) and/or space (0-1, global reverb send on lead, keys and pad — 0 is dry, 1 is cavernous).`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          swing: { type: 'number', minimum: 0, maximum: MAX_SWING },
+          space: { type: 'number', minimum: 0, maximum: 1 },
+        },
+      },
+      execute: (args) => {
+        requireMode(deps, 'compose', 'studio_set_groove')
+        const report = state(deps).apply('agent', (c) => ops.setGroove(c, { swing: args.swing, space: args.space }))
         return mutationResponse(deps, report)
       },
     },
@@ -278,7 +309,7 @@ const mixProperties = {
   muted: { type: 'boolean' },
 }
 
-function melodicEditTool(deps: ToolDeps, id: 'lead' | 'bass', presets: readonly string[]): ToolDef {
+function melodicEditTool(deps: ToolDeps, id: 'lead' | 'keys' | 'bass', presets: readonly string[]): ToolDef {
   const label = INSTRUMENT_LABELS[id]
   return {
     name: `${id}_edit`,
@@ -469,13 +500,21 @@ function padEditTool(deps: ToolDeps): ToolDef {
 }
 
 export function instrumentTools(deps: ToolDeps = defaultDeps): ToolDef[] {
-  const present = state(deps).composition.instruments
-  const tools: ToolDef[] = []
-  if (present.includes('lead')) tools.push(melodicEditTool(deps, 'lead', LEAD_PRESETS))
-  if (present.includes('drums')) tools.push(drumsEditTool(deps))
-  if (present.includes('bass')) tools.push(melodicEditTool(deps, 'bass', BASS_PRESETS))
-  if (present.includes('pad')) tools.push(padEditTool(deps))
-  return tools
+  // Follow rack order so the tool list mirrors what the human sees.
+  return state(deps).composition.instruments.map((id) => {
+    switch (id) {
+      case 'lead':
+        return melodicEditTool(deps, 'lead', LEAD_PRESETS)
+      case 'keys':
+        return melodicEditTool(deps, 'keys', KEYS_PRESETS)
+      case 'bass':
+        return melodicEditTool(deps, 'bass', BASS_PRESETS)
+      case 'drums':
+        return drumsEditTool(deps)
+      case 'pad':
+        return padEditTool(deps)
+    }
+  })
 }
 
 // --------------------------------------------------------- performance tools
@@ -544,7 +583,7 @@ export function performanceTools(deps: ToolDeps = defaultDeps): ToolDef[] {
       inputSchema: {
         type: 'object',
         properties: {
-          instrument: { type: 'string', enum: ['lead', 'drums', 'bass', 'pad'] },
+          instrument: { type: 'string', enum: ['lead', 'keys', 'drums', 'bass', 'pad'] },
           ...mixProperties,
         },
         required: ['instrument'],
@@ -611,6 +650,7 @@ export function computeToolNames(s: Pick<StudioState, 'mode' | 'composition'>): 
     'studio_remove_instrument',
     'studio_set_tempo',
     'studio_set_key',
+    'studio_set_groove',
     'studio_enter_performance',
     'studio_publish',
     ...s.composition.instruments.map((id) => `${id}_edit`),

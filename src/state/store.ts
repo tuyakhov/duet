@@ -291,6 +291,24 @@ export function saveToStorage(state: Pick<StudioState, 'sessionId' | 'compositio
   }
 }
 
+/**
+ * Restore the autosaved session (if any) into the store. Merges onto fresh
+ * defaults so sessions saved by older builds gain new fields. Must be called
+ * outside React rendering (e.g. before the root renders).
+ */
+export function hydrateFromStorage(): boolean {
+  const saved = loadFromStorage()
+  if (!saved) return false
+  const base = createSession().composition
+  const composition = { ...base, ...saved.composition }
+  for (const id of ['lead', 'keys', 'bass', 'drums', 'pad'] as const) {
+    if (!composition[id]) (composition as Record<string, unknown>)[id] = base[id]
+  }
+  useStudioStore.setState({ sessionId: saved.sessionId, composition })
+  useStudioStore.getState().logActivity('system', 'restored your session from autosave')
+  return true
+}
+
 export function loadFromStorage(): SavedSession | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)

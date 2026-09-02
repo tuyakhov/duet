@@ -4,7 +4,7 @@ import { humanActions } from '../state/actions'
 import { useStudioStore } from '../state/store'
 import { TRACK_COLORS } from './trackMeta'
 
-const ADDABLE: InstrumentId[] = ['drums', 'bass', 'pad']
+const ADDABLE: InstrumentId[] = ['keys', 'drums', 'bass', 'pad']
 
 export function InstrumentRack() {
   const instruments = useStudioStore((s) => s.composition.instruments)

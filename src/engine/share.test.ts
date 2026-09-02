@@ -38,8 +38,25 @@ describe('share codec', () => {
   it('excludes anything but the composition', () => {
     const decoded = decodeShare(encodeShare(richComposition()))
     expect(Object.keys(decoded).sort()).toEqual(
-      ['bass', 'drums', 'instruments', 'key', 'lead', 'loopLength', 'pad', 'scale', 'tempo', 'title'].sort(),
+      [
+        'bass', 'drums', 'instruments', 'key', 'keys', 'lead', 'loopLength',
+        'pad', 'scale', 'space', 'swing', 'tempo', 'title',
+      ].sort(),
     )
+  })
+
+  it('gives old-format links sensible defaults for new fields', () => {
+    const c = richComposition()
+    const legacy = JSON.parse(JSON.stringify(c)) as Record<string, unknown>
+    delete legacy.keys
+    delete legacy.swing
+    delete legacy.space
+    const payload = btoa(JSON.stringify({ v: 1, composition: legacy }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    const decoded = decodeShare(payload)
+    expect(decoded.keys.notes).toEqual([])
+    expect(decoded.swing).toBe(0)
+    expect(typeof decoded.space).toBe('number')
   })
 
   it.each([

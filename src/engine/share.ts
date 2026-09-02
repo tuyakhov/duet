@@ -82,19 +82,22 @@ export function decodeShare(encoded: string): Composition {
     }
     const seen = new Set<string>()
     for (const id of raw.instruments) {
-      if (!['lead', 'drums', 'bass', 'pad'].includes(id as string) || seen.has(id as string)) {
+      if (!['lead', 'keys', 'drums', 'bass', 'pad'].includes(id as string) || seen.has(id as string)) {
         throw new DuetError('SHARE_DATA_INVALID', `Invalid instrument list.`)
       }
       seen.add(id as string)
     }
     composition.instruments = raw.instruments as InstrumentId[]
+    if (typeof raw.swing === 'number' && raw.swing >= 0 && raw.swing <= 0.6) composition.swing = raw.swing
+    if (typeof raw.space === 'number' && raw.space >= 0 && raw.space <= 1) composition.space = raw.space
     composition.lead.notes = validateNotes(raw.lead?.notes ?? [])
+    composition.keys.notes = validateNotes(raw.keys?.notes ?? [])
     composition.bass.notes = validateNotes(raw.bass?.notes ?? [])
     composition.drums.pattern = validateDrumPattern(raw.drums?.pattern ?? {})
     const chords = raw.pad?.chords ?? []
     if (!Array.isArray(chords)) throw new DuetError('SHARE_DATA_INVALID', 'Invalid pad chords.')
     composition.pad.chords = chords.map((ch) => validateChord(ch))
-    for (const id of ['lead', 'bass', 'drums', 'pad'] as const) {
+    for (const id of ['lead', 'keys', 'bass', 'drums', 'pad'] as const) {
       const track = raw[id]
       if (track?.preset && typeof track.preset === 'string') composition[id].preset = track.preset
       const mixer = track?.mixer

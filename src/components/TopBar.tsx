@@ -3,11 +3,13 @@ import { KEYS, SCALE_NAMES } from '../engine/types'
 import { humanActions } from '../state/actions'
 import { useStudioStore } from '../state/store'
 
-export function TopBar({ onReset }: { onReset: () => void }) {
+export function TopBar({ onReset, savedAt }: { onReset: () => void; savedAt: number | null }) {
   const title = useStudioStore((s) => s.composition.title)
   const tempo = useStudioStore((s) => s.composition.tempo)
   const musicalKey = useStudioStore((s) => s.composition.key)
   const scale = useStudioStore((s) => s.composition.scale)
+  const swing = useStudioStore((s) => s.composition.swing)
+  const space = useStudioStore((s) => s.composition.space)
   const mode = useStudioStore((s) => s.mode)
   const undoDepth = useStudioStore((s) => s.undoDepth)
   const requestPublish = useStudioStore((s) => s.requestPublish)
@@ -48,6 +50,11 @@ export function TopBar({ onReset }: { onReset: () => void }) {
         aria-label="Song title"
         disabled={mode === 'performance'}
       />
+      {savedAt !== null && (
+        <span className="saved-chip" key={savedAt} title="Session autosaved to this browser">
+          ✓ saved
+        </span>
+      )}
 
       <div className="topbar-controls">
         <div className="control-cluster" title="Tempo">
@@ -61,7 +68,7 @@ export function TopBar({ onReset }: { onReset: () => void }) {
           </button>
         </div>
 
-        <div className="control-cluster" title="Key and scale">
+        <div className="control-cluster" title="Key and scale — changing key transposes all notes">
           <label>KEY</label>
           <select
             className="select"
@@ -89,6 +96,33 @@ export function TopBar({ onReset }: { onReset: () => void }) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="control-cluster" title={`Swing ${Math.round(swing * 100)}% · Space ${Math.round(space * 100)}%`}>
+          <label>SWING</label>
+          <input
+            type="range"
+            className="volume-slider groove-slider"
+            min={0}
+            max={0.6}
+            step={0.05}
+            value={swing}
+            onChange={(e) => humanActions.setSwing(Number(e.target.value))}
+            disabled={mode === 'performance'}
+            aria-label="Swing"
+          />
+          <label>SPACE</label>
+          <input
+            type="range"
+            className="volume-slider groove-slider"
+            min={0}
+            max={1}
+            step={0.05}
+            value={space}
+            onChange={(e) => humanActions.setSpace(Number(e.target.value))}
+            disabled={mode === 'performance'}
+            aria-label="Reverb space"
+          />
         </div>
 
         <div className="mode-toggle" role="tablist" aria-label="Studio mode">

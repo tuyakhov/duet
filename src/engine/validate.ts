@@ -5,8 +5,10 @@ import {
   DRUM_PRESETS,
   DRUM_VOICES,
   KEYS,
+  KEYS_PRESETS,
   LEAD_PRESETS,
   LOOP_LENGTH,
+  MAX_SWING,
   MAX_TEMPO,
   MIN_TEMPO,
   PAD_PRESETS,
@@ -14,7 +16,7 @@ import {
 } from './types'
 import type { Chord, DrumPattern, DrumVoice, InstrumentId, Note, ScaleName } from './types'
 
-const INSTRUMENTS: InstrumentId[] = ['lead', 'drums', 'bass', 'pad']
+const INSTRUMENTS: InstrumentId[] = ['lead', 'keys', 'drums', 'bass', 'pad']
 
 export function assertInstrumentId(value: unknown): InstrumentId {
   if (typeof value !== 'string' || !INSTRUMENTS.includes(value as InstrumentId)) {
@@ -80,9 +82,24 @@ export function assertEnergy(value: unknown): number {
   return value
 }
 
+export function assertSwing(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > MAX_SWING) {
+    throw new DuetError('INVALID_INPUT', `Swing must be a number from 0 to ${MAX_SWING} (got ${String(value)}).`)
+  }
+  return value
+}
+
+export function assertSpace(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new DuetError('INVALID_INPUT', `Space must be a number from 0 to 1 (got ${String(value)}).`)
+  }
+  return value
+}
+
 export function assertPreset(instrument: InstrumentId, value: unknown): string {
   const presets: Record<InstrumentId, readonly string[]> = {
     lead: LEAD_PRESETS,
+    keys: KEYS_PRESETS,
     bass: BASS_PRESETS,
     pad: PAD_PRESETS,
     drums: DRUM_PRESETS,

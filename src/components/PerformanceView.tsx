@@ -9,7 +9,13 @@ import { PlayIcon, StopIcon } from './Transport'
 import { TRACK_COLORS } from './trackMeta'
 
 function useLevels(): Record<InstrumentId, number> {
-  const [levels, setLevels] = useState<Record<InstrumentId, number>>({ lead: 0, bass: 0, pad: 0, drums: 0 })
+  const [levels, setLevels] = useState<Record<InstrumentId, number>>({
+    lead: 0,
+    keys: 0,
+    bass: 0,
+    pad: 0,
+    drums: 0,
+  })
   useEffect(() => {
     let raf = 0
     const loop = () => {

@@ -87,6 +87,7 @@ export function TrackCard({ id }: { id: InstrumentId }) {
       </div>
       <div className="track-body">
         {id === 'lead' && <PianoRoll id="lead" lowOctave={4} highOctave={5} />}
+        {id === 'keys' && <PianoRoll id="keys" lowOctave={3} highOctave={4} />}
         {id === 'bass' && <PianoRoll id="bass" lowOctave={1} highOctave={2} />}
         {id === 'drums' && <DrumGrid />}
         {id === 'pad' && <ChordLane />}

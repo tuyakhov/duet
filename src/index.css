@@ -16,6 +16,7 @@
   --text-faint: #5d6188;
 
   --lead: #3ee2ff;
+  --keys: #7bed6a;
   --drums: #ff3d81;
   --bass: #ffb02e;
   --pad: #a06bff;
@@ -206,6 +207,42 @@ select {
   outline: none;
   border-color: var(--lead);
   background: #0d1024;
+}
+
+.saved-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--agent);
+  letter-spacing: 0.06em;
+  animation: saved-fade 2.4s ease-out forwards;
+  white-space: nowrap;
+}
+
+@keyframes saved-fade {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+.roll-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-style: italic;
+  z-index: 1;
 }
 
 .topbar-controls {
@@ -516,6 +553,19 @@ select {
   border-radius: 2px;
   background: var(--line);
   outline: none;
+}
+
+.groove-slider {
+  width: 56px;
+}
+
+.groove-slider::-webkit-slider-thumb {
+  background: var(--lead);
+  box-shadow: 0 0 6px #3ee2ff66;
+}
+
+.groove-slider:disabled {
+  opacity: 0.35;
 }
 
 .volume-slider::-webkit-slider-thumb {

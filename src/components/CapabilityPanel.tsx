@@ -7,7 +7,9 @@ import type { InstrumentId } from '../engine/types'
 
 function chipMeta(name: string): { className: string; style?: React.CSSProperties } {
   if (name.startsWith('performance_')) return { className: 'tool-chip performance' }
-  const instrument = (['lead', 'drums', 'bass', 'pad'] as InstrumentId[]).find((id) => name === `${id}_edit`)
+  const instrument = (['lead', 'keys', 'drums', 'bass', 'pad'] as InstrumentId[]).find(
+    (id) => name === `${id}_edit`,
+  )
   if (instrument) {
     return {
       className: 'tool-chip instrument',

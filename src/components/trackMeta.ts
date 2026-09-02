@@ -1,8 +1,9 @@
 import type { InstrumentId } from '../engine/types'
-import { BASS_PRESETS, DRUM_PRESETS, LEAD_PRESETS, PAD_PRESETS } from '../engine/types'
+import { BASS_PRESETS, DRUM_PRESETS, KEYS_PRESETS, LEAD_PRESETS, PAD_PRESETS } from '../engine/types'
 
 export const TRACK_COLORS: Record<InstrumentId, string> = {
   lead: 'var(--lead)',
+  keys: 'var(--keys)',
   drums: 'var(--drums)',
   bass: 'var(--bass)',
   pad: 'var(--pad)',
@@ -10,6 +11,7 @@ export const TRACK_COLORS: Record<InstrumentId, string> = {
 
 export const TRACK_PRESETS: Record<InstrumentId, readonly string[]> = {
   lead: LEAD_PRESETS,
+  keys: KEYS_PRESETS,
   drums: DRUM_PRESETS,
   bass: BASS_PRESETS,
   pad: PAD_PRESETS,
