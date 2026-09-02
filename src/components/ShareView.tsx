@@ -3,6 +3,7 @@ import { audioEngine } from '../audio/engine'
 import type { Composition } from '../engine/types'
 import { INSTRUMENT_LABELS } from '../engine/types'
 import { humanActions } from '../state/actions'
+import { copyText } from '../state/clipboard'
 import { useStudioStore } from '../state/store'
 import { PlayIcon, StopIcon } from './Transport'
 
@@ -17,7 +18,7 @@ interface ShareViewProps {
  */
 export function ShareView({ composition, onRemix }: ShareViewProps) {
   const playing = useStudioStore((s) => s.playback.playing)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const togglePlay = async () => {
     if (!audioEngine.enabled) await humanActions.enableAudio()
@@ -25,13 +26,9 @@ export function ShareView({ composition, onRemix }: ShareViewProps) {
   }
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
-    } catch {
-      // ignore
-    }
+    const ok = await copyText(window.location.href)
+    setCopyState(ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyState('idle'), ok ? 1600 : 3200)
   }
 
   return (
@@ -51,7 +48,7 @@ export function ShareView({ composition, onRemix }: ShareViewProps) {
             Remix this duet
           </button>
           <button className="btn ghost" onClick={copy}>
-            {copied ? '✓ Copied' : 'Copy link'}
+            {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Copy the address bar' : 'Copy link'}
           </button>
         </div>
         <p className="share-cta">They played the melody. Their agent built the band. What will yours create?</p>

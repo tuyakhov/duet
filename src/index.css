@@ -1241,6 +1241,15 @@ select {
   background: var(--surface-pressed);
 }
 
+.prompt-copy.copied {
+  color: var(--agent);
+}
+
+.prompt-copy.failed {
+  color: var(--text);
+  background: rgba(10, 132, 255, 0.2);
+}
+
 /* ── activity timeline ────────────────────────────────────────────────── */
 
 .timeline-panel {

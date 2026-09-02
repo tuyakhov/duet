@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { copyText } from '../state/clipboard'
 import { useStudioStore } from '../state/store'
 
 const CONFETTI_COLORS = ['#64d2ff', '#ff375f', '#ff9f0a', '#bf5af2', '#30d158', '#ffffff']
@@ -6,7 +7,8 @@ const CONFETTI_COLORS = ['#64d2ff', '#ff375f', '#ff9f0a', '#bf5af2', '#30d158', 
 export function Celebration() {
   const celebration = useStudioStore((s) => s.celebration)
   const dismiss = useStudioStore((s) => s.dismissCelebration)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const linkRef = useRef<HTMLInputElement>(null)
 
   const confetti = useMemo(
     () =>
@@ -21,13 +23,13 @@ export function Celebration() {
   if (!celebration) return null
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(celebration.url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1600)
-    } catch {
-      // input remains selectable
+    const ok = await copyText(celebration.url)
+    setCopyState(ok ? 'copied' : 'failed')
+    if (!ok) {
+      linkRef.current?.focus()
+      linkRef.current?.select()
     }
+    setTimeout(() => setCopyState('idle'), ok ? 1600 : 3200)
   }
 
   return (
@@ -43,9 +45,9 @@ export function Celebration() {
         <h2>“{celebration.title}” is live ✦</h2>
         <p>Anyone with this link can play your duet — and remix it with their own agent.</p>
         <div className="share-link-row">
-          <input readOnly value={celebration.url} onFocus={(e) => e.target.select()} aria-label="Remix link" />
+          <input ref={linkRef} readOnly value={celebration.url} onFocus={(e) => e.target.select()} aria-label="Remix link" />
           <button className="btn approve" onClick={copy}>
-            {copied ? '✓ Copied' : 'Copy link'}
+            {copyState === 'copied' ? '✓ Copied' : copyState === 'failed' ? 'Selected — press ⌘C' : 'Copy link'}
           </button>
         </div>
         <p className="share-cta">I played the melody. My agent built the band. What will yours create?</p>
