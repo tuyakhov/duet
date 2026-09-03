@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { track } from './analytics'
 import { ActivityTimeline } from './components/ActivityTimeline'
 import { ApprovalModal } from './components/ApprovalModal'
 import { CapabilityPanel } from './components/CapabilityPanel'
@@ -55,6 +56,7 @@ export default function App() {
     if (bootState.kind === 'share') {
       useStudioStore.getState().loadComposition(bootState.composition, 'system', 'opened a shared duet')
     }
+    if (bootState.kind !== 'studio') track('share_link_opened', { ok: bootState.kind === 'share' })
   }, [bootState])
 
   const mode = useStudioStore((s) => s.mode)

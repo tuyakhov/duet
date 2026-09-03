@@ -149,7 +149,29 @@ npm run build      # type-checks + production build to dist/
 npm run preview    # serve the production build
 ```
 
-No backend, no environment variables, no API keys.
+No backend, no API keys. The only environment variables are the optional analytics ones below.
+
+## Analytics (optional)
+
+Duet can send product analytics and session replays to [PostHog](https://posthog.com). It is **off by default**: nothing is initialised unless a project key is present at build time.
+
+```bash
+cp .env.example .env.local   # fill in VITE_POSTHOG_KEY (and VITE_POSTHOG_HOST=https://eu.i.posthog.com for EU cloud)
+```
+
+On Vercel, add the same variables to the project (Production) and redeploy — Vite inlines them at build time. Turn on **Record user sessions** in the PostHog project settings to receive replays.
+
+What is captured when enabled (see `src/analytics.ts`):
+
+| Event | When | Properties |
+|---|---|---|
+| `$pageview` / `$pageleave` | page load / unload | PostHog defaults |
+| `studio_opened` | boot | `webmcp_surface` (`document`, `navigator` or `none`), `shared_link` |
+| `duet_activity` | every entry of the in-app activity timeline | `actor` (`human`, `agent`, `system`), `message` |
+| `tool_called` | every WebMCP tool invocation by an agent | `tool`, `ok`, `error_code`, `duration_ms` |
+| `share_link_opened` | a `#s=` link is opened | `ok` (decoded or rejected) |
+
+The detected WebMCP surface is attached to every event, so replays can be filtered to agent-capable browsers. Input fields are masked in replays, DOM autocapture is off, visitors stay anonymous (no person profiles), and share URLs are trimmed before they leave the page so the composition payload is never sent.
 
 ## Deploying
 
@@ -160,7 +182,7 @@ No backend, no environment variables, no API keys.
 
 ## Privacy & security
 
-- Everything runs in the browser. There is no server, no analytics, no telemetry, and nothing is uploaded — the only outbound requests are for the page's own assets.
+- Everything runs in the browser. There is no server and nothing you make is uploaded. A build without `VITE_POSTHOG_KEY` makes no outbound requests other than for the page's own assets; builds with it set (including the public deployment) send anonymous usage events and session replays to PostHog — see [Analytics](#analytics-optional) for exactly what.
 - Your session autosaves to `localStorage` in your own browser. Share links carry the composition *inside the URL*; anyone with the link can play and remix it, and nothing else about you travels with it.
 - WebMCP tools validate every input and enforce the Musical Contract; they never execute arbitrary instructions from an agent — they expose a fixed, typed set of musical operations.
 - The dev-only test harness (`window.__duetHarness`) is stripped from production builds.

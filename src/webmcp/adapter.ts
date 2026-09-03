@@ -14,6 +14,7 @@
  * The adapter feature-detects, keeps a target set of tools in sync, and
  * normalizes results/errors into MCP content responses.
  */
+import { track } from '../analytics'
 
 export interface ToolContext {
   /**
@@ -75,13 +76,17 @@ function normalizeResult(value: unknown): McpContent {
   return { content: [{ type: 'text', text }] }
 }
 
+function errorCode(err: unknown): string {
+  return err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : 'INTERNAL'
+}
+
 function normalizeError(err: unknown): McpContent {
   const payload =
     err && typeof err === 'object' && 'code' in err
       ? {
           ok: false,
           error: {
-            code: String((err as { code: unknown }).code),
+            code: errorCode(err),
             message: err instanceof Error ? err.message : String(err),
           },
         }
@@ -103,10 +108,13 @@ function toContext(extra: unknown): ToolContext {
 
 function wrapExecute(tool: ToolDef): RawExecute {
   return async (args: Record<string, unknown>, extra?: unknown) => {
+    const started = Date.now()
     try {
       const result = await tool.execute(args ?? {}, toContext(extra))
+      track('tool_called', { tool: tool.name, ok: true, duration_ms: Date.now() - started })
       return normalizeResult(result)
     } catch (err) {
+      track('tool_called', { tool: tool.name, ok: false, error_code: errorCode(err), duration_ms: Date.now() - started })
       return normalizeError(err)
     }
   }
