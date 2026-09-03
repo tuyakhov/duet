@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { KEYS, SCALE_NAMES } from '../engine/types'
 import { humanActions } from '../state/actions'
 import { useStudioStore } from '../state/store'
+import { LogoMark } from './LogoMark'
 
 export function TopBar({ onReset, savedAt }: { onReset: () => void; savedAt: number | null }) {
   const title = useStudioStore((s) => s.composition.title)
@@ -14,6 +15,7 @@ export function TopBar({ onReset, savedAt }: { onReset: () => void; savedAt: num
   const undoDepth = useStudioStore((s) => s.undoDepth)
   const requestPublish = useStudioStore((s) => s.requestPublish)
   const pendingPublish = useStudioStore((s) => s.pendingPublish)
+  const playing = useStudioStore((s) => s.playback.playing)
 
   const [draftTitle, setDraftTitle] = useState(title)
   useEffect(() => setDraftTitle(title), [title])
@@ -26,12 +28,7 @@ export function TopBar({ onReset, savedAt }: { onReset: () => void; savedAt: num
   return (
     <header className="topbar">
       <div className="logo" title="Duet">
-        <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden>
-          <rect x="10" y="30" width="7" height="16" rx="3.5" fill="#0a84ff" opacity="0.55" />
-          <rect x="21" y="20" width="7" height="26" rx="3.5" fill="#0a84ff" opacity="0.75" />
-          <rect x="32" y="12" width="7" height="34" rx="3.5" fill="#0a84ff" />
-          <rect x="43" y="24" width="7" height="22" rx="3.5" fill="#0a84ff" opacity="0.75" />
-        </svg>
+        <LogoMark animated={playing} />
         Duet
       </div>
 
